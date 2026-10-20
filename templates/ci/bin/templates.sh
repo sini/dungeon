@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usage: ci/templates.sh <template> <den-dir>  (from repo root)
+# usage: templates/ci/bin/templates.sh <template> <den-dir>  (from repo root)
 # prints one line per system output: <attr> <drvPath|ERR msg>
 set -u
 t=$1 den=$(realpath "$2")

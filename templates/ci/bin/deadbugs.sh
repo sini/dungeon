@@ -11,9 +11,9 @@ fi
 scratch=$(mktemp -d); export den scratch
 one() {
   s=$1; log=$scratch/$s.log
-  (ulimit -v 8388608; timeout 300 nix run nixpkgs#nix-unit -- --override-input den "$den" --flake "./templates/ci#.tests.$s" > "$log" 2>&1); rc=$?
+  (ulimit -v 8388608; timeout 300 nix run nixpkgs#nix-unit -- --override-input den "$den" --flake "path:$PWD/templates/ci#.tests.$s" > "$log" 2>&1); rc=$?
   nm=$(grep -oE '[0-9]+/[0-9]+ successful' "$log" | tail -1 | grep -oE '^[0-9]+/[0-9]+')
-  err=$(grep -m1 'error:' "$log" | cut -c1-160 | tr '\t' ' ')
+  err=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -E 'error:.*[^ ]' | tail -1 | cut -c1-160 | tr '\t' ' ')
   st=ERROR
   if [ -n "$nm" ]; then
     n=${nm%/*}; m=${nm#*/}
