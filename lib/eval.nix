@@ -20,7 +20,8 @@ dungeon: {
         rawAspects = aspects;
         inherit (cfg) schema policies quirks classes homes unregistered systems rawFns;
         # entity `aspect` = den.aspects.<name> (reference/schema.mdx:139,141); lazy: throws only when read
-        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); })) cfg.hosts;
+        # user aspect (reference/schema.mdx:185) applies where it exists; none = empty aspect. shortcut: `<user>@<host>` qualified aspect not merged yet.
+        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); users = builtins.mapAttrs (u: v: v // { aspect = aspects.${u} or { name = u; provides = { }; includes = [ ]; }; }) (h.users or { }); })) cfg.hosts;
         batteries.primary-user = aspects.primary-user;
         batteries.define-user = aspects.define-user;
         batteries.hostname = aspects.hostname;
