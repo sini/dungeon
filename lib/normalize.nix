@@ -1,0 +1,114 @@
+# One lowering pass: normAspect (value), classifyKey (aspect key), classifyInc (include element).
+dungeon: {
+  # policy record or functor-with-args; den.policies values are records from capture (entry.nix), so refs compare by name
+  isPol = e: builtins.isAttrs e && ((e.__isPolicy or false) || (e ? __functor && e ? __functionArgs));
+  inlineAttrs = e: builtins.isAttrs e && !(e ? key) && !dungeon.isPol e;
+  classifyInc = e: {
+    policy = dungeon.isPol e;
+    slot = if dungeon.isPol e then null else if builtins.isFunction e || dungeon.inlineAttrs e then "anon" else "ref";
+  };
+  normalize =
+    lib: leaf: cnf: raw:
+    let
+      # fn aspects/includes are class content: each declared class key projects its own part of the fn result
+      classes = builtins.filter (k: dungeon.gen.aspects.keyCategory cnf k == "class") (builtins.attrNames cnf.keySemantics);
+      bare = f: lib.genAttrs classes (cls: lib.setFunctionArgs (args: { imports = [ ((f (builtins.intersectAttrs (lib.functionArgs f) args)).${cls} or { }) ]; }) (lib.functionArgs f));
+      # structural keys are never nested aspects; other keys go through Gen keyCategory (class/channel keys hold content)
+      skip = [ "provides" "_" "includes" "excludes" "policies" "meta" ];
+      classifyKey =
+        a: k:
+        if builtins.elem k [ "provides" "_" ] then
+          if builtins.isAttrs (a.${k} or null) then "provides" else null
+        else if !builtins.elem k skip && dungeon.gen.aspects.keyCategory cnf k == null && builtins.isAttrs a.${k} && !(a.${k} ? _type) then
+          "nested"
+        else
+          null;
+      keysOf = a: kind: builtins.filter (k: classifyKey a k == kind) (builtins.attrNames a);
+      mapKids =
+        f: path: a:
+        a
+        // lib.genAttrs (keysOf a "provides") (k: builtins.mapAttrs (c: v: f "${path}/${c}" v) a.${k})
+        // lib.genAttrs (keysOf a "nested") (k: f "${path}/${k}" a.${k});
+      kidList =
+        path: a:
+        lib.concatMap (k: lib.mapAttrsToList (c: v: { p = "${path}/${c}"; inherit v; }) a.${k}) (keysOf a "provides")
+        ++ map (k: { p = "${path}/${k}"; v = a.${k}; }) (keysOf a "nested");
+      normAspect =
+        path: a:
+        if builtins.isFunction a then
+          bare a
+        else if builtins.isAttrs a then
+          mapKids normAspect path a
+        else
+          a;
+      inl = a: lib.imap0 (i: e: { inherit i e; inc = dungeon.classifyInc e; }) (if builtins.isAttrs a && builtins.isList (a.includes or null) then a.includes else [ ]);
+      anon = n: i: "${n}/${toString i}";
+      tree = if builtins.isAttrs raw then builtins.mapAttrs normAspect raw else raw;
+      # Keys exist for every include slot (elements stay unforced: they may reference `den`, which would cycle).
+      anonsAt =
+        n: a:
+        builtins.listToAttrs (
+          map (x: {
+            name = anon n x.i;
+            value = if builtins.isFunction x.e then bare x.e else if dungeon.inlineAttrs x.e then x.e else { };
+          }) (inl a)
+        )
+        // lib.foldl' (acc: k: acc // anonsAt k.p k.v) { } (if builtins.isAttrs a then kidList n a else [ ]);
+      # Aspect policy delivering the `includes` a fn aspect/include returns (Den parity: fn results' includes are live).
+      # declared quirks are always bound ([] when nothing is emitted), so a fn include needing only them is ready at any scope
+      # shortcut: pipe-fed quirk values are not seen when deciding includes; upgrade when an include depends on a quirk value
+      chan = lib.genAttrs (builtins.filter (k: dungeon.gen.aspects.keyCategory cnf k == "channel") (builtins.attrNames cnf.keySemantics)) (_: [ ]);
+      # Fn elements whose required args are not yet in scope fire later at the user scope (member policies fire per scope).
+      fnIncs =
+        n: f:
+        let
+          content = e: removeAttrs e [ "name" "includes" "excludes" "provides" "_" "policies" "meta" "description" ];
+          expand =
+            args: es:
+            lib.concatMap (
+              e:
+              let
+                c = dungeon.classifyInc e;
+                inline = r: lib.optional (content r != { }) (dungeon.effects.include (content r)) ++ expand args (r.includes or [ ]);
+              in
+              if c.policy then [ ]
+              else if c.slot == "ref" then [ (dungeon.effects.include e) ]
+              else if builtins.isFunction e then
+                lib.optionals (builtins.all (k: args ? ${k}) (builtins.attrNames (lib.filterAttrs (_: opt: !opt) (lib.functionArgs e)))) (inline (e (builtins.intersectAttrs (lib.functionArgs e) args)))
+              else inline e
+            ) es;
+        in
+        {
+          name = "${n}.fnIncs";
+          fn = lib.setFunctionArgs (
+            scope:
+            let args = chan // scope; in expand args ((f (builtins.intersectAttrs (lib.functionArgs f) args)).includes or [ ])
+          # host/user are advertised optional so nested fn includes see them when the scope has them (content.nix denArgs)
+          ) ({ host = true; user = true; } // builtins.mapAttrs (k: opt: opt || chan ? ${k}) (lib.functionArgs f));
+        };
+      polsAt =
+        n: a:
+        if builtins.isFunction a then { ${n} = [ (fnIncs n a) ]; } else
+        {
+          ${n} =
+            map (x: if x.e ? __isPolicy then x.e else { fn = x.e; name = "${n}.when${toString x.i}"; }) (builtins.filter (x: x.inc.policy) (inl a));
+        }
+        // lib.foldl' (acc: x: acc // { ${anon n x.i} = [ (fnIncs (anon n x.i) x.e) ]; }) { } (builtins.filter (x: builtins.isFunction x.e) (inl a))
+        // lib.foldl' (acc: k: acc // polsAt k.p k.v) { } (kidList n a);
+    in
+    {
+      inherit tree;
+      anons = lib.concatMapAttrs anonsAt tree;
+      polIncs = lib.concatMapAttrs polsAt (lib.filterAttrs (_: v: builtins.isAttrs v || builtins.isFunction v) (if builtins.isAttrs raw then raw else { }));
+      # include slots become refs to the hoisted anons; `policies` is stripped (policy records live in the `policies` field)
+      fixed =
+        den:
+        let
+          fix = n: a: a // { includes = map (x: if x.inc.slot == "anon" then (den.rawAspects or den.aspects).${anon n x.i} else if x.inc.slot == "ref" && builtins.isAttrs x.e then removeAttrs x.e [ "__functor" ] else x.e) (builtins.filter (x: x.inc.slot != null) (inl a)); };
+          fixTree = n: a: if builtins.isAttrs a then mapKids fixTree n (if builtins.isList (a.includes or null) then fix n a else a) else a;
+          strip = a: if builtins.isAttrs a then removeAttrs a [ "policies" ] else a;
+        in
+        builtins.mapAttrs (n: a: strip (fixTree n a)) tree;
+      recs = lib.concatMapAttrs (n: a: lib.optionalAttrs (builtins.isAttrs a && builtins.isAttrs (a.policies or null)) { ${n} = builtins.mapAttrs (p: fn: { __isPolicy = true; inherit fn; name = "${n}.${p}"; }) a.policies; }) tree;
+    };
+}

@@ -1,0 +1,28 @@
+on:
+  pull_request:
+  push:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  flake-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        rev: ["main"] # Add other releases, `latest` or commits
+    name: Den (rev ${{matrix.rev}})
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: wimpysworld/nothing-but-nix@main
+        if: matrix.os == 'ubuntu-latest'
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: actions/checkout@v5
+      - run: sed -i 's#vic/den/main#vic/den/${{matrix.rev}}#' flake.nix
+        if: matrix.os == 'ubuntu-latest'
+      - run: sed -i '' 's#vic/den/main#vic/den/${{matrix.rev}}#' flake.nix
+        if: matrix.os == 'macos-latest'
+      - run: nix flake update den
+      - run: nix flake metadata
+      - run: nix flake check

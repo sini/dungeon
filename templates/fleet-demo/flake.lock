@@ -1,0 +1,126 @@
+{
+  "nodes": {
+    "den": {
+      "locked": {
+        "path": "../..",
+        "type": "path"
+      },
+      "original": {
+        "path": "../..",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "den-diagram": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1789505374,
+        "narHash": "sha256-McpH6Jk8nIEP4Z2ITypVK2wrMJo7dxC8WWWnP4WwysQ=",
+        "owner": "denful",
+        "repo": "den-diagram",
+        "rev": "3ba2e47fa936251d0bab3a37fc754363c682ea98",
+        "type": "github"
+      },
+      "original": {
+        "owner": "denful",
+        "repo": "den-diagram",
+        "type": "github"
+      }
+    },
+    "flake-parts": {
+      "inputs": {
+        "nixpkgs-lib": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1778716662,
+        "narHash": "sha256-m1Yf0wZ8j1OHjTc2UwHwyQRSnNeSgLJOd7q5Y45hzi4=",
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "rev": "f7c1a2d347e4c52d5fb8d10cb4d94b5884e546fb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "type": "github"
+      }
+    },
+    "home-manager": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779336838,
+        "narHash": "sha256-n1+l78hJRABp4cQHKeD0BVByT0vZLPqd09Tvoq8Q+d8=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "928d72376949e222ea4f07b44828a55b0136422e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "import-tree": {
+      "locked": {
+        "lastModified": 1778781969,
+        "narHash": "sha256-Jjuz5CmSkur8KvLDoGa+vylEp+RkQtv4mt/qcMznpH0=",
+        "owner": "vic",
+        "repo": "import-tree",
+        "rev": "d321337efd0f23a9eb14a42adb7b2c29313ab274",
+        "type": "github"
+      },
+      "original": {
+        "owner": "vic",
+        "repo": "import-tree",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1779259093,
+        "narHash": "sha256-AyKVLJihBA4molWFBpbk2+ruMFlkL1ONA8eNShZithw=",
+        "rev": "d99b013d5d1931ad77fe3912ed218170dec5d9a4",
+        "type": "tarball",
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre1001117.d99b013d5d19/nixexprs.tar.xz?lastModified=1779259093&rev=d99b013d5d1931ad77fe3912ed218170dec5d9a4"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1779259093,
+        "narHash": "sha256-AyKVLJihBA4molWFBpbk2+ruMFlkL1ONA8eNShZithw=",
+        "rev": "d99b013d5d1931ad77fe3912ed218170dec5d9a4",
+        "type": "tarball",
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre1001117.d99b013d5d19/nixexprs.tar.xz?lastModified=1779259093&rev=d99b013d5d1931ad77fe3912ed218170dec5d9a4"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz"
+      }
+    },
+    "root": {
+      "inputs": {
+        "den": "den",
+        "den-diagram": "den-diagram",
+        "flake-parts": "flake-parts",
+        "home-manager": "home-manager",
+        "import-tree": "import-tree",
+        "nixpkgs": "nixpkgs_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
