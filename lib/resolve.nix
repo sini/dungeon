@@ -4,6 +4,7 @@
 dungeon: {
   resolve =
     world: class: root:
+    if root ? __entityKind then dungeon.resolveEntityModule world class root.ctx.host else
     let
       lib = dungeon.genLib;
       ctx = root.__ctx or { };
@@ -33,4 +34,12 @@ dungeon: {
           throw "den.lib.aspects.resolve: include is not an aspect or function";
     in
     { imports = expand root; };
+  # den.lib.resolveEntity "host" result: the host pipeline's modules (tutorials/microvm.mdx stage 3, reference/lib.mdx:62-83).
+  # shortcut: users' hm/homeEnv + quirk channels are not wired for a resolved entity; throws when present.
+  resolveEntityModule =
+    world: class: h:
+    if h.class != class then throw "den.lib.aspects.resolve: host `${h.name}` is ${h.class}, not ${class}"
+    else if h.users or { } != { } then throw "den.lib.aspects.resolve: host `${h.name}` with users unsupported"
+    else if world.quirks != { } then throw "den.lib.aspects.resolve: quirks unsupported for resolved entity `${h.name}`"
+    else { imports = (dungeon.route world.schema world.rawAspects h [ ]).modules; };
 }

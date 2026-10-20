@@ -5,6 +5,12 @@ dungeon: {
       inherit (dungeon) gen;
       t = dungeon.genLib.types;
       cat = category: builtins.mapAttrs (_: _: { inherit category; });
+      # schema.host.imports fns take the entity itself as `host` (tutorials/microvm.mdx extendHostSchema `{ host, ... }`).
+      # bound to the lazy `config` arg, not _module.args: Gen folds declarations before args exist.
+      selfArg = m:
+        if builtins.isFunction m && (builtins.functionArgs m) ? host then
+          { __functor = _: a: m (a // { host = a.config; }); __functionArgs = builtins.removeAttrs (builtins.functionArgs m) [ "host" ] // { config = false; }; }
+        else m;
       # quirk names are channel keys (quirks never depend on aspects: no cycle); output classes: guides/flake-outputs.mdx:25-36.
       cnf0Of = c: {
         keySemantics =
@@ -86,7 +92,7 @@ dungeon: {
                     # schema.host.imports (e.g. fleet addr/environment options) extend the entity.
                     # open by default (entities.mdx:183-192); schema.host.isStrict closes it
                     freeformType = if config.schema.host.isStrict then null else t.lazyAttrsOf t.raw;
-                    imports = config.schema.host.imports ++ [ (dungeon.schema.entity config.schema.host) ];
+                    imports = map selfArg config.schema.host.imports ++ [ (dungeon.schema.entity config.schema.host) ];
                     options.name = lib.mkOption { type = t.str; default = name; };
                     options.hostName = lib.mkOption { type = t.str; default = name; };
                     options.system = lib.mkOption { type = t.str; default = system; };

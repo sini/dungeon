@@ -8,8 +8,8 @@ dungeon: {
     };
     lib.policy.include = dungeon.effects.include;
     # reference/policies.mdx:142-151: module straight into `class`; at the root (`path` = []) that is an include of `{ <class> = module; }`.
-    # shortcut: non-empty `path` (nest mode) throws; add when a fleet uses it.
-    lib.policy.provide = { class, module, path ? [ ] }: if path != [ ] then throw "den: policy.provide path not supported" else dungeon.effects.include { ${class} = module; };
+    # non-empty `path` (nest mode): a provide effect delivered by scopes.nix (tutorials/microvm.mdx stage 3).
+    lib.policy.provide = { class, module, path ? [ ] }@spec: if path != [ ] then dungeon.effects.provide spec else dungeon.effects.include { ${class} = module; };
     lib.policy.exclude = dungeon.effects.exclude;
     lib.policy.route = dungeon.effects.route;
     # when pred inner: guard over scope ctx only. hasAspect (closure membership) is NOT provided: reading it from a policy would cycle through the closure.

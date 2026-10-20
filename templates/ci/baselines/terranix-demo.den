@@ -1,0 +1,4 @@
+web-1 etc:/nix/store/p7pkxxkxpw2shhjkiqxpnqlpkdhxc3wh-etc.drv
+web-2 etc:/nix/store/crkxvlhha28hliqd8dcl5ydakx8fd5gv-etc.drv
+web-1 /nix/store/d5ac3x9f03zfa8dh0a5vpl9mmdwg6mmh-web-1.drv
+web-2 /nix/store/rf8gnyz6yl204q7479pi579q7a76ffvm-web-2.drv

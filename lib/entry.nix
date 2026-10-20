@@ -33,7 +33,10 @@ let
         unregistered = dungeon.unregistered (dungeon.view.cnf0Of den) (if leaf == "default" then { default = d.value; } else d.value);
       };
   # built hosts whose intoAttr head is `o`
-  hostsAt = den: inputs: o: dungeon.genLib.filterAttrs (n: _: builtins.head (den.host n).intoAttr == o) (dungeon.hosts den inputs);
+  # `[ ]` builds the host but places nothing (reference/output.mdx:43,78)
+  hostsAt = den: inputs: o: dungeon.genLib.filterAttrs (n: _: (den.host n).intoAttr != [ ] && builtins.head (den.host n).intoAttr == o) (dungeon.hosts den inputs);
+  # hosts with any other intoAttr land at flake.<intoAttr> (schema.mdx:166-171)
+  hostsElsewhere = den: inputs: lib: lib.mkMerge (lib.mapAttrsToList (n: s: lib.setAttrByPath (den.host n).intoAttr s) (lib.filterAttrs (n: _: (den.host n).intoAttr != [ ] && !builtins.elem (builtins.head (den.host n).intoAttr) [ "nixosConfigurations" "darwinConfigurations" ]) (dungeon.hosts den inputs)));
   # flake-parts already declares `flake`, so only the plain-evalModules host adds it.
   mk =
     declareFlake:
@@ -45,7 +48,7 @@ let
         map (n: dungeon.ciSurface.flakeOutputs.${n}) [ "flake" "nixosConfigurations" "darwinConfigurations" "homeConfigurations" ]) else [ ]
       # flake-parts-lib: specialArg of a running mkFlake (perSystem/systems exist only there)
       ) ++ lib.optional (margs ? flake-parts-lib) ({ den, ... }: dungeon.flakeParts den lib)
-      ++ [ ({ den, ... }: { flake = dungeon.instantiates den lib; }) ({ options, ... }: { config.flake = dungeon.outputs config._module.args.den inputs options; }) ];
+      ++ [ ({ den, ... }: { flake = dungeon.instantiates den lib; }) ({ options, ... }: { config.flake = dungeon.outputs config._module.args.den inputs options; }) ({ den, ... }: { config.flake = hostsElsewhere den inputs lib; }) ];
       # den.lib is user-extensible (templates/nvf-standalone/modules/nvf-integration.nix): definitions deep-merge over the builtin lib.
       options.den = lib.genAttrs leaves (capture lib) // { lib = lib.mkOption { default = { }; type = lib.mkOptionType { name = "denLib"; merge = _: defs: builtins.foldl' lib.recursiveUpdate { } (map (d: d.value) defs); }; }; };
       config._module.args.den = let w = dungeon.evalDen (lib.concatMap (l: lib.optionals options.den.${l}.isDefined config.den.${l}) leaves ++ lib.optional (margs ? withSystem) { _module.args.withSystem = margs.withSystem; }); in w // { lib = lib.recursiveUpdate w.lib config.den.lib; };

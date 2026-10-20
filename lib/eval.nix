@@ -18,7 +18,9 @@ dungeon: {
       world = {
         aspects = wrapped;
         rawAspects = aspects;
-        inherit (cfg) hosts schema policies quirks classes homes unregistered systems rawFns;
+        inherit (cfg) schema policies quirks classes homes unregistered systems rawFns;
+        # entity `aspect` = den.aspects.<name> (reference/schema.mdx:139,141); lazy: throws only when read
+        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); })) cfg.hosts;
         batteries.primary-user = aspects.primary-user;
         batteries.define-user = aspects.define-user;
         batteries.hostname = aspects.hostname;
@@ -36,8 +38,12 @@ dungeon: {
         lib.nh = dungeon.nh cfg.hosts cfg.homes;
         lib.policy = dungeon.channels.lib.policy;
         lib.aspects.resolve = dungeon.resolve world;
+        # reference/lib.mdx:62-83: only "host" entities resolve (route.nix host pipeline, resolve.nix); other kinds throw.
+        lib.resolveEntity = kind: ctx: if kind == "host" then { __entityKind = "host"; inherit ctx; } else throw "den.lib.resolveEntity: kind `${kind}` unsupported";
         batteries.forward = dungeon.forward world;
         lib.schema = dungeon.schema.lib;
+        # den-diagram capture (reference/diag.mdx:321-332) is out of scope (vic 2026-10-20): explicit throw, catchable by tryEval.
+        lib.capture.captureFleet = _: throw "dungeon: den.lib.capture.captureFleet not implemented (den-diagram out of scope)";
         lib.closure = dungeon.closure aspects;
         # host entity by name (system = its attr-path key)
         host = name: builtins.head (builtins.concatLists (builtins.attrValues (builtins.mapAttrs (system: hs: if hs ? ${name} then [ (hs.${name} // { inherit system; }) ] else [ ]) cfg.hosts)));

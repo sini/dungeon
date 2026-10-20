@@ -135,6 +135,8 @@ dungeon: {
           declared = n: let r = builtins.foldl' (e: s: if builtins.isAttrs e && e ? ${s} then e.${s} else null) aspects (if aspects ? ${n} then [ n ] else builtins.filter builtins.isString (builtins.split "/" n)); in if r == null then throw "den: aspect ${n} not declared" else r;
           inc = x:
             if (x.e.__effect or null) != "include" then [ ]
+            # parametric include `{ host }: { <class> = ...; }` binds the scope ctx (tutorials/microvm.mdx stage 1)
+            else if builtins.isFunction x.e.value then [ { name = "${x.p.name}#${toString x.i}"; content = x.e.value (builtins.intersectAttrs (fnArgs { fn = x.e.value; }) args); includes = [ ]; quirks = { }; policyIncs = [ ]; } ]
             else if x.e.value ? name then cl (declared x.e.value.name)
             else if x.e.value ? includes then builtins.concatMap (b: cl aspects.${b.name}) x.e.value.includes
             else [ { name = "${x.p.name}#${toString x.i}"; content = x.e.value; includes = [ ]; quirks = { }; policyIncs = [ ]; } ];
@@ -193,7 +195,9 @@ dungeon: {
           [ inputs.home-manager."${os}Modules".home-manager ]
           ++ builtins.concatMap (nixosOf { inherit host; }) hmHostCl
           ++ map (u: { home-manager.users.${u}.imports = builtins.concatMap (hmOf u) (defaultCl ++ hmHostCl ++ userClosure u ++ viaHost u ++ routes (argsOf u) (viaHost u)); }) hmUsers;
-      modules = builtins.concatMap (nixosOf { inherit host; }) (builtins.filter (a: !needsUser a) defaultCl ++ hostCl) ++ builtins.concatMap forUser users;
+      modules = builtins.concatMap (nixosOf { inherit host; }) (builtins.filter (a: !needsUser a) defaultCl ++ hostCl) ++ builtins.concatMap forUser users
+        # policy.provide effects of the host scope and its custom child scopes (scopes.nix, gen-scope nta)
+        ++ dungeon.scopes.delivered sch host (hostArgs mF) (schemaPols "host" ++ memPols mF host.name);
       # policy.instantiate custom spec (reference/policies.mdx:162-172): class bucket of the host scope subtree (host, then users)
       classModules =
         cls:

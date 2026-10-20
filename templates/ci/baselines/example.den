@@ -1,0 +1,8 @@
+igloo /nix/store/fc3m44ybx31rmajpmwd34qni2i8bn38i-nixos-system-igloo-26.05.20260507.68a8af9.drv
+apple /nix/store/rgl0mki9vxq83l8brhdrp4cmcq8rzp5r-darwin-system-26.05.6a7fdcd.drv
+alice /nix/store/bz9lizcgfmyrpywjqlz1d4jaj4rlfxn4-home-manager-generation.drv
+alice /nix/store/9kmb31gkxrkpfmpydic3a33g9yaq7mpz-alice.drv
+apple /nix/store/4h0k2xl2i88bhi43xnnfg8fhclgc8bqp-apple.drv
+igloo /nix/store/dnwa7b9gn5j8aiz0bapc1rws37lmz535-igloo.drv
+vm /nix/store/8yyy9nhy5wqsmbgmljk11fi0sbbxzphs-vm.drv
+write-flake /nix/store/ggm5a82kqn6sg7aqbhc74jlwnbh8bk68-write-flake.drv
