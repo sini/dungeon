@@ -33,12 +33,20 @@ dungeon: {
         path: a:
         lib.concatMap (k: lib.mapAttrsToList (c: v: { p = "${path}/${c}"; inherit v; }) a.${k}) (keysOf a "provides")
         ++ map (k: { p = "${path}/${k}"; v = a.${k}; }) (keysOf a "nested");
+      # `_` is an alias of `provides` (reference/aspects.mdx:69): one key reaches Gen, so both spellings are one sub-aspect.
+      unalias =
+        path: a:
+        if !builtins.isAttrs (a._ or null) then a
+        else
+          let both = builtins.attrNames (builtins.intersectAttrs a._ (a.provides or { })); in
+          if both != [ ] then throw "den: aspect `${path}`: `_.${builtins.head both}` and `provides.${builtins.head both}` both defined in one definition"
+          else removeAttrs a [ "_" ] // { provides = (a.provides or { }) // a._; };
       normAspect =
         path: a:
         if builtins.isFunction a then
           bare a
         else if builtins.isAttrs a then
-          mapKids normAspect path a
+          mapKids normAspect path (unalias path a)
         else
           a;
       inl = a: lib.imap0 (i: e: { inherit i e; inc = dungeon.classifyInc e; }) (if builtins.isAttrs a && builtins.isList (a.includes or null) then a.includes else [ ]);

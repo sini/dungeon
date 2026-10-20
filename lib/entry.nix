@@ -41,6 +41,9 @@ let
   mk =
     declareFlake:
     { lib, config, options, inputs, ... }@margs:
+    let
+      w = dungeon.evalDen (lib.concatMap (l: lib.optionals options.den.${l}.isDefined config.den.${l}) leaves ++ lib.optional (margs ? withSystem) { _module.args.withSystem = margs.withSystem; });
+    in
     {
       # freeform `flake` (keyed: dedups with a user flakeOutputs.flake import) + typed outputs dungeon writes.
       # docs reference/output.mdx:61: own `flake` outputs only when `inputs.flake-parts` is absent.
@@ -49,9 +52,9 @@ let
       # flake-parts-lib: specialArg of a running mkFlake (perSystem/systems exist only there)
       ) ++ lib.optional (margs ? flake-parts-lib) ({ den, ... }: dungeon.flakeParts den lib)
       ++ [ ({ den, ... }: { flake = dungeon.instantiates den lib; }) ({ options, ... }: { config.flake = dungeon.outputs config._module.args.den inputs options; }) ({ den, ... }: { config.flake = hostsElsewhere den inputs lib; }) ];
-      # den.lib is user-extensible (templates/nvf-standalone/modules/nvf-integration.nix): definitions deep-merge over the builtin lib.
-      options.den = lib.genAttrs leaves (capture lib) // { lib = lib.mkOption { default = { }; type = lib.mkOptionType { name = "denLib"; merge = _: defs: builtins.foldl' lib.recursiveUpdate { } (map (d: d.value) defs); }; }; };
-      config._module.args.den = let w = dungeon.evalDen (lib.concatMap (l: lib.optionals options.den.${l}.isDefined config.den.${l}) leaves ++ lib.optional (margs ? withSystem) { _module.args.withSystem = margs.withSystem; }); in w // { lib = lib.recursiveUpdate w.lib config.den.lib; };
+      # config.den.lib is the builtin lib with user definitions deep-merged over it (both `den.lib` and `config.den.lib` read it).
+      options.den = lib.genAttrs leaves (capture lib) // { lib = lib.mkOption { default = { }; type = lib.mkOptionType { name = "denLib"; merge = _: defs: builtins.foldl' lib.recursiveUpdate w.lib (map (d: d.value) defs); }; }; };
+      config._module.args.den = w // { lib = config.den.lib; };
       # schema.mdx:166-171: each host lands at its intoAttr (nixosConfigurations / darwinConfigurations)
       config.flake.nixosConfigurations = hostsAt config._module.args.den inputs "nixosConfigurations";
       config.flake.darwinConfigurations = hostsAt config._module.args.den inputs "darwinConfigurations";
@@ -86,6 +89,8 @@ in
   lowerDef = lower;
   # key: a test importing den.flakeModule again must dedupe, not redeclare `flake`
   flakeModule = { key = "dungeon:flakeModule"; imports = [ (mk true) ]; };
+  # plain lib.evalModules host: `inputs` is bound here, not a specialArg (mk reads it inside `imports`).
+  nixModule = inputs: { key = "dungeon:nixModule"; imports = [ ({ lib, config, options, ... }@m: mk true (m // { inherit inputs; })) ]; };
   # docs tutorials/default.mdx:184-192: dendritic.nix imports den.flakeModules.dendritic as the den wiring.
   flakeModules = rec { default = { key = "dungeon:flakeModules.default"; imports = [ (mk false) ]; }; dendritic = default; };
 }

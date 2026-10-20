@@ -47,6 +47,9 @@ dungeon: {
             name: e:
             e
             // builtins.listToAttrs (map (k: { name = k; value = norm "${name}/${k}" e.${k}; }) (kids e))
+            # `<aspect>.provides.<n>` is also reachable as `<aspect>.<n>` (reference/aspects.mdx:69); a same-named own key wins.
+            // builtins.mapAttrs (c: v: norm "${name}/provides/${c}" v) (removeAttrs (if builtins.isAttrs (e.provides or null) then e.provides else { }) (builtins.attrNames e))
+            // dungeon.genLib.optionalAttrs (builtins.isAttrs (e.provides or null)) { _ = norm "${name}/provides" e.provides; }
             // {
               inherit name;
               policyIncs = builtins.filter (p: !builtins.any (x: builtins.isAttrs x && (x.__isPolicy or false) && x.name == p.name) (e.excludes or [ ])) (decl.aspectPolicies.${name} or [ ]);
@@ -91,8 +94,8 @@ dungeon: {
                   {
                     # schema.host.imports (e.g. fleet addr/environment options) extend the entity.
                     # open by default (entities.mdx:183-192); schema.host.isStrict closes it
-                    freeformType = if config.schema.host.isStrict then null else t.lazyAttrsOf t.raw;
-                    imports = map selfArg config.schema.host.imports ++ [ (dungeon.schema.entity config.schema.host) ];
+                    # strict: gen-schema's closed freeform refuses undeclared keys by name (reference/lib.mdx:238-242)
+                    imports = map selfArg config.schema.host.imports ++ [ (dungeon.schema.entity config.schema.host) (if config.schema.host.isStrict then gen.schema.mkStrictModule "host" else { freeformType = t.lazyAttrsOf t.raw; }) ];
                     options.name = lib.mkOption { type = t.str; default = name; };
                     options.hostName = lib.mkOption { type = t.str; default = name; };
                     options.system = lib.mkOption { type = t.str; default = system; };
