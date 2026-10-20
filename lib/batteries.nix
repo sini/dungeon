@@ -1,5 +1,19 @@
 # Inner module pre-declaring battery aspects (design-gen.md §4; content ASSUMED from Den docs).
 dungeon: {
+  # reference/batteries.mdx:349: names -> nixpkgs.config.allowUnfreePredicate in nixos, darwin, homeManager.
+  # The predicate builder is a keyed module, so every include imports it once per target eval (stands in for den.default).
+  # shortcut: user-included names are not lifted onto the host OS config (batteries.mdx:349); add with user->host routing.
+  batteries.unfree =
+    names:
+    let
+      predicate = { config, lib, ... }: {
+        key = "dungeon:batteries:unfree";
+        options.unfree.packages = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; };
+        config.nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) config.unfree.packages;
+      };
+      m = { imports = [ predicate ]; unfree.packages = names; };
+    in
+    { nixos = m; darwin = m; homeManager = m; };
   batteries.module = { config, ... }: let withSystem = config._module.args.withSystem; homeOf = sys: n: if builtins.match ".*-darwin" sys != null then "/Users/${n}" else "/home/${n}"; in {
     # reference/batteries.mdx:88: NixOS wheel+networkmanager; Darwin system.primaryUser.
     aspects.primary-user.user =

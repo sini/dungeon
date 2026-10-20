@@ -30,6 +30,7 @@ dungeon: {
         batteries."self'" = aspects."self'";
         batteries.user-shell = dungeon.batteryFns.user-shell;
         batteries.tty-autologin = dungeon.batteryFns.tty-autologin;
+        batteries.unfree = dungeon.batteries.unfree;
         provides = world.batteries;
         _ = world.provides;
         lib.parametric = dungeon.parametric;

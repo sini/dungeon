@@ -6,6 +6,9 @@ dungeon: {
   # route.nix overrides hasAspect with the scope-projected closure where the scope is known.
   schema.entity = kind: let lib = dungeon.genLib; in {
     options.resolved = lib.mkOption { type = dungeon.genLib.types.raw; default = { }; };
+    # instance-own includes/excludes are read for every kind, so they are declared (custom-entity-kinds.mdx:47-49), not freeform.
+    options.includes = lib.mkOption { type = dungeon.genLib.types.listOf dungeon.genLib.types.raw; default = [ ]; };
+    options.excludes = lib.mkOption { type = dungeon.genLib.types.listOf dungeon.genLib.types.raw; default = [ ]; };
     options.hasAspect = lib.mkOption {
       type = dungeon.genLib.types.raw;
       default = a: builtins.elem (a.name or null) (map (b: if builtins.isAttrs b then b.name or null else null) (kind.includes or [ ]));
