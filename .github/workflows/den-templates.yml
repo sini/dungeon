@@ -1,0 +1,30 @@
+# Compare each Den template: Den (fresh from github:denful/den) vs this repo.
+name: den-templates
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  templates:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [minimal, flake-parts-modules, terranix-demo, nvf-standalone, default, example, microvm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: fresh Den baseline + dungeon, compare
+        env:
+          T: ${{ matrix.template }}
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/denful/den "$RUNNER_TEMP/den"
+          # shellcheck disable=SC2016
+          nix develop path:./dev -c bash -c '
+            t=$T
+            bash templates/ci/bin/templates.sh "$t" "$RUNNER_TEMP/den" | grep -E "^\S+ (/nix|ERR|etc:)" > "$RUNNER_TEMP/den.out"
+            bash templates/ci/bin/templates.sh "$t" "$PWD"            | grep -E "^\S+ (/nix|ERR|etc:)" > "$RUNNER_TEMP/dungeon.out"
+            cat "$RUNNER_TEMP/den.out"
+            test -s "$RUNNER_TEMP/den.out"
+            diff "$RUNNER_TEMP/den.out" "$RUNNER_TEMP/dungeon.out"
+          '
