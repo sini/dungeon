@@ -51,6 +51,9 @@ dungeon: {
           a;
       inl = a: lib.imap0 (i: e: { inherit i e; inc = dungeon.classifyInc e; }) (if builtins.isAttrs a && builtins.isList (a.includes or null) then a.includes else [ ]);
       anon = n: i: "${n}/${toString i}";
+      # configure-aspects.mdx:134-139: a fn taking no named args is a positional `ctx:` include; `{ class, aspect-chain }` is a static leaf
+      positional = e: builtins.isFunction e && lib.functionArgs e == { };
+      staticLeaf = e: builtins.isFunction e && (lib.functionArgs e) ? class && (lib.functionArgs e) ? aspect-chain;
       tree = if builtins.isAttrs raw then builtins.mapAttrs normAspect raw else raw;
       # Keys exist for every include slot (elements stay unforced: they may reference `den`, which would cycle).
       anonsAt =
@@ -58,7 +61,7 @@ dungeon: {
         builtins.listToAttrs (
           map (x: {
             name = anon n x.i;
-            value = if builtins.isFunction x.e then bare x.e else if dungeon.inlineAttrs x.e then x.e else { };
+            value = if positional x.e then { } else if builtins.isFunction x.e then bare x.e else if dungeon.inlineAttrs x.e then x.e else { };
           }) (inl a)
         )
         // lib.foldl' (acc: k: acc // anonsAt k.p k.v) { } (if builtins.isAttrs a then kidList n a else [ ]);
@@ -72,15 +75,20 @@ dungeon: {
         let
           content = e: removeAttrs e [ "name" "includes" "excludes" "provides" "_" "policies" "meta" "description" ];
           expand =
-            args: es:
+            scope: es:
+            let args = chan // scope; in
             lib.concatMap (
               e:
               let
                 c = dungeon.classifyInc e;
-                inline = r: lib.optional (content r != { }) (dungeon.effects.include (content r)) ++ expand args (r.includes or [ ]);
+                inline = r: lib.optional (content r != { }) (dungeon.effects.include (content r)) ++ expand scope (r.includes or [ ]);
               in
               if c.policy then [ ]
               else if c.slot == "ref" then [ (dungeon.effects.include e) ]
+              # configure-aspects.mdx:134-139 kind (2): class + aspect-chain are bound where a class is resolved, not at a scope
+              else if staticLeaf e then throw "den: aspect `${n}`: static leaf `{ class, aspect-chain }` returned by a parametric include is not supported"
+              # positional `ctx:` include: the whole scope ctx (deadbugs nixpkgs-forward-positional)
+              else if positional e then expand scope [ (e scope) ]
               else if builtins.isFunction e then
                 lib.optionals (builtins.all (k: args ? ${k}) (builtins.attrNames (lib.filterAttrs (_: opt: !opt) (lib.functionArgs e)))) (inline (e (builtins.intersectAttrs (lib.functionArgs e) args)))
               else inline e
@@ -90,7 +98,8 @@ dungeon: {
           name = "${n}.fnIncs";
           fn = lib.setFunctionArgs (
             scope:
-            let args = chan // scope; in expand args ((f (builtins.intersectAttrs (lib.functionArgs f) args)).includes or [ ])
+            if positional f then expand scope [ (f scope) ]
+            else expand scope ((f (builtins.intersectAttrs (lib.functionArgs f) (chan // scope))).includes or [ ])
           # host/user are advertised optional so nested fn includes see them when the scope has them (content.nix denArgs)
           ) ({ host = true; user = true; } // builtins.mapAttrs (k: opt: opt || chan ? ${k}) (lib.functionArgs f));
         };
