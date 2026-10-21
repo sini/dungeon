@@ -18,14 +18,23 @@ dungeon: {
       world = {
         aspects = wrapped;
         rawAspects = aspects;
-        inherit (cfg) schema policies quirks classes homes unregistered systems rawFns;
+        inherit (cfg) schema policies quirks classes unregistered systems rawFns;
+        # home entity (reference/schema.mdx:219-235): name = registry key, userName/hostName parsed at `@`;
+        # identity = gen-identity's one mint (gen-identity lib/default.nix:411) over registry key + system (entities.mdx:93).
+        homes = builtins.mapAttrs (system: builtins.mapAttrs (name: h:
+          let at = builtins.match "([^@]*)@(.*)" name; in
+          { inherit name system; userName = if at == null then name else builtins.elemAt at 0; hostName = if at == null then null else builtins.elemAt at 1; class = "homeManager"; collisionPolicy = cfg.schema.home.collisionPolicy or null; }
+          // h // { id_hash = dungeon.gen.identity.hashIdentity "home" [ "name" "system" ] (l: { inherit name system; }.${l}); })) cfg.homes;
         # entity `aspect` = den.aspects.<name> (reference/schema.mdx:139,141); lazy: throws only when read
         # user aspect (reference/schema.mdx:185) applies where it exists; none = empty aspect. shortcut: `<user>@<host>` qualified aspect not merged yet.
-        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); users = builtins.mapAttrs (u: v: v // { aspect = aspects.${u} or { name = u; provides = { }; includes = [ ]; }; }) (h.users or { }); })) cfg.hosts;
+        # collisionPolicy: entity value, else the kind level (reference/aspects.mdx:186-193)
+        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { collisionPolicy = h.collisionPolicy or cfg.schema.host.collisionPolicy or null; aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); users = builtins.mapAttrs (u: v: v // { collisionPolicy = v.collisionPolicy or cfg.schema.user.collisionPolicy or null; aspect = aspects.${u} or { name = u; provides = { }; includes = [ ]; }; }) (h.users or { }); })) cfg.hosts;
         batteries.primary-user = aspects.primary-user;
         batteries.define-user = aspects.define-user;
         batteries.hostname = aspects.hostname;
         batteries.host-aspects = aspects.host-aspects;
+        # reference/batteries.mdx:116-127: inert compatibility shim, produces no effects
+        batteries.mutual-provider = { };
         batteries."inputs'" = aspects."inputs'";
         batteries."self'" = aspects."self'";
         batteries.user-shell = dungeon.batteryFns.user-shell;

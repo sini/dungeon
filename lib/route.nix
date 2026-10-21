@@ -9,9 +9,11 @@ dungeon: {
     let
       cl = dungeon.closure aspects;
       flat = x: if builtins.isList x then builtins.concatMap flat x else [ x ];
+      # nested/namespace aspects are named `<parent>/<key>/...` and live inside their parent (closure.nix `at`)
+      lookup = n: if aspects ? ${n} then aspects.${n} else builtins.foldl' (e: s: if builtins.isAttrs e && e ? ${s} then e.${s} else null) aspects (builtins.filter builtins.isString (builtins.split "/" n));
       one = i: x:
         if !builtins.isAttrs x || dungeon.isPol x || x ? __builtin then [ ]
-        else if x ? name then (if aspects ? ${x.name} then cl aspects.${x.name} else if strict then throw "den: schema.${kind}.includes: unknown aspect `${x.name}`" else [ ])
+        else if x ? name then (let r = lookup x.name; in if r != null then cl r else if strict then throw "den: schema.${kind}.includes: unknown aspect `${x.name}`" else [ ])
         else if dungeon.inlineAttrs x then [ { name = "schema.${kind}#${toString i}"; content = x; includes = [ ]; quirks = { }; policyIncs = [ ]; } ]
         else [ ];
     in
@@ -83,7 +85,8 @@ dungeon: {
       memOf = a: s: names defaultCl ++ names (a.members host.name) ++ (if s == host.name then [ ] else names (a.members s));
       # pass -1: policy-free static closures
       # user aspect (`u@host` wins) + host child named after the user (where-config-lands.mdx:72, per user: the every-user reach is a v1 defect, L79-85)
-      userCl = u: (let r = aspects."${u}@${host.name}" or aspects.${u} or null; in if r == null then [ ] else cl r) ++ (let c = (aspects.${host.name} or { }).${u} or null; in if builtins.isAttrs c && c ? name then cl c else [ ]);
+      # `tux.provides.igloo`: tux home + igloo OS, only on igloo (where-config-lands.mdx:77-78)
+      userCl = u: (let r = aspects."${u}@${host.name}" or aspects.${u} or null; in if r == null then [ ] else cl r ++ provOf host.name r) ++ (let c = (aspects.${host.name} or { }).${u} or null; in if builtins.isAttrs c && c ? name then cl c else [ ]);
       userStatic = u: defaultCl ++ hostBase ++ tuCl ++ provCl u ++ userCl u ++ relayCl u;
       m0 = s: (builtins.listToAttrs (map (u: { name = userScope u; value = names (userStatic u); }) allUsers) // { ${host.name} = names (defaultCl ++ hostBase ++ tuCl); }).${s};
       # pass k fires policies with hasAspect reading pass k-1 membership, until membership is unchanged; oscillation throws
@@ -153,7 +156,7 @@ dungeon: {
       defaultCl = cl aspects.default;
       defaultUser = u: map (userPart u) (builtins.filter (hasUser u) defaultCl);
       userModules = u: defaultUser u ++ map (userPart u) (builtins.filter (hasUser u) (userClosure u));
-      # default parts whose fn needs `user` bind per user scope and are skipped at host scope
+      # default/host-closure parts whose fn needs `user` bind per user scope (fan out, land on the host) and are skipped at host scope (issue-609, where-config-lands.mdx:55)
       needsUser =
         a:
         let
@@ -169,15 +172,17 @@ dungeon: {
           th = seen: a: builtins.concatMap (b: if builtins.elem b.name seen then [ ] else [ b ] ++ th (seen ++ [ b.name ]) b) (provOf "to-hosts" a);
         in
         builtins.concatMap (nixosOf (argsOf u)) (builtins.concatMap (th [ ]) (userClosure u));
+      # OS content lands once per host: a user-closure aspect whose minted identity is already in the host scope is not re-delivered (cross-scope dedup by id_hash; synthetic records carry none)
+      hostIds = builtins.listToAttrs (map (a: { name = a.id_hash; value = true; }) (builtins.filter (a: a ? id_hash) (defaultCl ++ hostCl ++ tuCl)));
       # every host user gets users.users.<u> even with no user-class content
       forUser =
         u:
         [ { users.users.${u} = { }; } ]
         ++ toHosts u
         ++ defaultUser u
-        ++ builtins.concatMap (nixosOf (argsOf u)) (builtins.filter needsUser defaultCl)
+        ++ builtins.concatMap (nixosOf (argsOf u)) (builtins.filter needsUser (defaultCl ++ hostCl))
         ++ builtins.concatMap (
-          a: (if hasUser u a then [ (userPart u a) ] else [ ]) ++ (if builtins.elem a.name (map (b: b.name) tuCl) then [ ] else nixosOf (argsOf u) a)
+          a: (if hasUser u a then [ (userPart u a) ] else [ ]) ++ (if builtins.elem a.name (map (b: b.name) tuCl) || hostIds ? ${a.id_hash or ""} then [ ] else nixosOf (argsOf u) a)
         ) (userClosure u);
     in
     {
@@ -200,7 +205,7 @@ dungeon: {
           ++ map (u: { home-manager.users.${u}.imports = builtins.concatMap (hmOf u) (defaultCl ++ hmHostCl ++ userClosure u ++ viaHost u ++ routes (argsOf u) (viaHost u)); }) hmUsers;
       # host scope fires routes too (schema.host + aspect policies of the host closure), over the host scope content
       # shortcut: a den.default route also fires per user scope; default fromClass content then lands twice, dedup with minted identity (D4).
-      modules = let hostScopeCl = builtins.filter (a: !needsUser a) defaultCl ++ hostCl; hostRoutes = dungeon.routesOf (dungeon.effectsOf "route" (dungeon.firePols (hostArgs mF) (schemaPols "host" ++ dungeon.uniqPols (builtins.concatMap (a: a.policyIncs) hostScopeCl)))) hostScopeCl; in builtins.concatMap (nixosOf { inherit host; }) (hostScopeCl ++ hostRoutes) ++ builtins.concatMap forUser users
+      modules = let hostScopeCl = builtins.filter (a: !needsUser a) (defaultCl ++ hostCl); hostRoutes = dungeon.routesOf (dungeon.effectsOf "route" (dungeon.firePols (hostArgs mF) (schemaPols "host" ++ dungeon.uniqPols (builtins.concatMap (a: a.policyIncs) hostScopeCl)))) hostScopeCl; in builtins.concatMap (nixosOf { inherit host; }) (hostScopeCl ++ hostRoutes) ++ builtins.concatMap forUser users
         # policy.provide effects of the host scope and its custom child scopes (scopes.nix, gen-scope nta)
         ++ dungeon.scopes.delivered sch host (hostArgs mF) (schemaPols "host" ++ memPols mF host.name);
       # policy.instantiate custom spec (reference/policies.mdx:162-172): class bucket of the host scope subtree (host, then users)
