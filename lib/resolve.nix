@@ -34,12 +34,12 @@ dungeon: {
           throw "den.lib.aspects.resolve: include is not an aspect or function";
     in
     { imports = expand root; };
-  # den.lib.resolveEntity "host" result: the host pipeline's modules (tutorials/microvm.mdx stage 3, reference/lib.mdx:62-83).
-  # shortcut: users' hm/homeEnv + quirk channels are not wired for a resolved entity; throws when present.
+  # den.lib.resolveEntity "host" result: the host pipeline's modules (tutorials/microvm.mdx stage 3, reference/lib.mdx:62-83);
+  # any other class: that class bucket of the host scope subtree, host then users (route.nix classModules; static leaf chain head, configure-aspects.mdx:134-139).
+  # shortcut: users' hm/homeEnv + quirk channels are not wired for a resolved entity; quirks throw.
   resolveEntityModule =
     world: class: h:
-    if h.class != class then throw "den.lib.aspects.resolve: host `${h.name}` is ${h.class}, not ${class}"
-    else if h.users or { } != { } then throw "den.lib.aspects.resolve: host `${h.name}` with users unsupported"
-    else if world.quirks != { } then throw "den.lib.aspects.resolve: quirks unsupported for resolved entity `${h.name}`"
-    else { imports = (dungeon.route world.schema world.rawAspects h [ ]).modules; };
+    let r = dungeon.route world.schema world.rawAspects h (builtins.attrNames (h.users or { })); in
+    if world.quirks != { } then throw "den.lib.aspects.resolve: quirks unsupported for resolved entity `${h.name}`"
+    else { imports = if h.class == class then r.modules else r.classModules class; };
 }

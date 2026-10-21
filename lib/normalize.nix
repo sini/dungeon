@@ -54,6 +54,23 @@ dungeon: {
       # configure-aspects.mdx:134-139: a fn taking no named args is a positional `ctx:` include; `{ class, aspect-chain }` is a static leaf
       positional = e: builtins.isFunction e && lib.functionArgs e == { };
       staticLeaf = e: builtins.isFunction e && (lib.functionArgs e) ? class && (lib.functionArgs e) ? aspect-chain;
+      # Static leaf content per class: a den-arg module (content.nix binds `host` via gen.bind.wrap), so `class` + `aspect-chain`
+      # are supplied where the class is resolved. Chain = [ entity aspect ] (head = the host entity, resolve.nix resolveEntityModule).
+      # shortcut: chain head is the host entity at every scope; upgrade when a leaf needs the user entity as head.
+      leafOf =
+        cls: chain: r:
+        {
+          imports = lib.optional (r ? ${cls}) r.${cls} ++ map (
+            i:
+            if staticLeaf i then leafOf cls chain (i { class = cls; aspect-chain = chain; })
+            else if dungeon.inlineAttrs i then leafOf cls chain i
+            else throw "den: static leaf result include (ref or parametric) is not supported"
+          ) (r.includes or [ ]);
+        };
+      leafAspect = f: lib.genAttrs classes (cls: {
+        __functor = _: { host }: let chain = [ { __entityKind = "host"; ctx.host = host; inherit (host) name; } ]; in leafOf cls chain (f { class = cls; aspect-chain = chain; });
+        __functionArgs = { host = false; };
+      });
       tree = if builtins.isAttrs raw then builtins.mapAttrs normAspect raw else raw;
       # Keys exist for every include slot (elements stay unforced: they may reference `den`, which would cycle).
       anonsAt =
@@ -61,7 +78,7 @@ dungeon: {
         builtins.listToAttrs (
           map (x: {
             name = anon n x.i;
-            value = if positional x.e then { } else if builtins.isFunction x.e then bare x.e else if dungeon.inlineAttrs x.e then x.e else { };
+            value = if positional x.e then { } else if staticLeaf x.e then leafAspect x.e else if builtins.isFunction x.e then bare x.e else if dungeon.inlineAttrs x.e then x.e else { };
           }) (inl a)
         )
         // lib.foldl' (acc: k: acc // anonsAt k.p k.v) { } (if builtins.isAttrs a then kidList n a else [ ]);
@@ -86,7 +103,7 @@ dungeon: {
               if c.policy then [ ]
               else if c.slot == "ref" then [ (dungeon.effects.include e) ]
               # configure-aspects.mdx:134-139 kind (2): class + aspect-chain are bound where a class is resolved, not at a scope
-              else if staticLeaf e then throw "den: aspect `${n}`: static leaf `{ class, aspect-chain }` returned by a parametric include is not supported"
+              else if staticLeaf e then [ (dungeon.effects.include (leafAspect e)) ]
               # positional `ctx:` include: the whole scope ctx (deadbugs nixpkgs-forward-positional)
               else if positional e then expand scope [ (e scope) ]
               else if builtins.isFunction e then
@@ -110,7 +127,7 @@ dungeon: {
           ${n} =
             map (x: if x.e ? __isPolicy then x.e else { fn = x.e; name = "${n}.when${toString x.i}"; }) (builtins.filter (x: x.inc.policy) (inl a));
         }
-        // lib.foldl' (acc: x: acc // { ${anon n x.i} = [ (fnIncs (anon n x.i) x.e) ]; }) { } (builtins.filter (x: builtins.isFunction x.e) (inl a))
+        // lib.foldl' (acc: x: acc // { ${anon n x.i} = [ (fnIncs (anon n x.i) x.e) ]; }) { } (builtins.filter (x: builtins.isFunction x.e && !staticLeaf x.e) (inl a))
         // lib.foldl' (acc: k: acc // polsAt k.p k.v) { } (kidList n a);
     in
     {
