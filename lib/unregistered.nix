@@ -19,7 +19,8 @@ dungeon: {
             let v = a.${k}; in
             if builtins.elem k [ "provides" "_" ] && builtins.isAttrs v then builtins.concatMap inAspect (builtins.attrValues v)
             else if known k then [ ]
-            else if builtins.isFunction v || (builtins.isAttrs v && !(v ? _type) && !shaped v) then [ k ]
+            # a function-valued non-class key is a nested parametric aspect (explanation/aspects.mdx:97-104, configure-aspects.mdx:163)
+            else if (builtins.isAttrs v && !(v ? _type) && !shaped v) then [ k ]
             else inAspect v
           ) (builtins.attrNames a);
     in

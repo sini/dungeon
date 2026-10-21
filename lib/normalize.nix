@@ -19,7 +19,7 @@ dungeon: {
         a: k:
         if builtins.elem k [ "provides" "_" ] then
           if builtins.isAttrs (a.${k} or null) then "provides" else null
-        else if !builtins.elem k skip && dungeon.gen.aspects.keyCategory cnf k == null && builtins.isAttrs a.${k} && !(a.${k} ? _type) then
+        else if !builtins.elem k skip && dungeon.gen.aspects.keyCategory cnf k == null && (builtins.isFunction a.${k} || builtins.isAttrs a.${k} && !(a.${k} ? _type)) then
           "nested"
         else
           null;
