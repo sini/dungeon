@@ -1,20 +1,25 @@
-# usage: drvPathDiff [--dungeon REF] [--input NAME] [--out FILE] <flake-ref> [attr...]
+# usage: drvPathDiff [--dungeon REF] [--den REF] [--input NAME] [--ignore NAME]... [--packages] [--no-auto] [--out FILE] <flake-ref> [attr...]
 # Evaluates drvPaths of <flake-ref> with its own input (Den) and with the input
 # overridden by dungeon. Prints OK/DIFF/ERR. On DIFF/ERR writes a GitHub issue body.
-dungeon=github:vic/dungeon input=den out=
+dungeon=github:vic/dungeon input=den out= den= pk=false auto=true ignore=()
 while [ $# -gt 0 ]; do
   case $1 in
     --dungeon) dungeon=$2; shift 2 ;;
     --input) input=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
-    -h|--help) sed -n '2,4p' "$0" 2>/dev/null || true; echo "usage: drvPathDiff [--dungeon REF|path:/dir] [--input NAME] [--out FILE] <flake-ref> [attr...]"; exit 0 ;;
+    --den) den=$2; shift 2 ;;
+    --ignore) ignore+=("$2"); shift 2 ;;
+    --packages) pk=true; shift ;;
+    --no-auto) auto=false; shift ;;
+    -h|--help) sed -n '2,4p' "$0" 2>/dev/null || true; echo "usage: drvPathDiff [--dungeon REF|path:/dir] [--den REF|DIR] [--input NAME] [--ignore NAME]... [--packages] [--no-auto] [--out FILE] <flake-ref> [attr...]"; exit 0 ;;
     *) break ;;
   esac
 done
-[ $# -ge 1 ] || { echo "usage: drvPathDiff [--dungeon REF] [--input NAME] [--out FILE] <flake-ref> [attr...]" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: drvPathDiff [--dungeon REF] [--den REF|DIR] [--input NAME] [--ignore NAME]... [--packages] [--no-auto] [--out FILE] <flake-ref> [attr...]" >&2; exit 2; }
 ref=$1; shift
 case $ref in *'#'*) echo "give the flake ref without #; pass attrs as extra args" >&2; exit 2 ;; esac
 case $dungeon in /*|./*) dungeon="path:$(realpath "$dungeon")" ;; esac
+case $den in /*|./*) den="path:$(realpath "$den")" ;; esac
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 apply=$(cat "$DRVPATHS_NIX")
 
@@ -22,26 +27,37 @@ apply=$(cat "$DRVPATHS_NIX")
 side() {
   name=$1; shift
   : > "$tmp/$name.txt"; : > "$tmp/$name.err"
-  if raw=$(nix eval --no-write-lock-file "$@" --raw "$ref#." --apply "$apply" 2>"$tmp/$name.err"); then
+  if ! $auto; then :
+  elif raw=$(nix eval --no-write-lock-file "$@" --raw "$ref#." --apply "($apply) $pk" 2>"$tmp/$name.err"); then
     printf '%s\n' "$raw" | sed '/^$/d' > "$tmp/$name.txt"
   else
     echo "<flake> ERR" > "$tmp/$name.txt"
   fi
   for a in "${attrs[@]}"; do
-    if d=$(nix eval --no-write-lock-file "${ovr[@]}" --raw "$ref#$a.drvPath" 2>>"$tmp/$name.err"); then
-      echo "$a $d" >> "$tmp/$name.txt"
-    else echo "$a ERR" >> "$tmp/$name.txt"; fi
+    case $a in
+      nixosConfigurations.*|darwinConfigurations.*) sel=.config.system.build.toplevel ;;
+      homeConfigurations.*) sel=.activationPackage ;;
+      *) sel= ;;
+    esac
+    if d=$(nix eval --no-write-lock-file "${ovr[@]}" --raw "$ref#$a$sel.drvPath" 2>>"$tmp/$name.err"); then
+      echo "${a##*.} $d" >> "$tmp/$name.txt"
+    elif [ "${a%%.*}" = nixosConfigurations ] && d=$(nix eval --no-write-lock-file "${ovr[@]}" --raw "$ref#$a.config.system.build.etc.drvPath" 2>>"$tmp/$name.err"); then
+      echo "${a##*.} etc:$d" >> "$tmp/$name.txt"   # toplevel throws (also on Den): compare etc
+    else echo "${a##*.} ERR" >> "$tmp/$name.txt"; fi
   done
 }
 attrs=("$@")
 ovr=()
-side den
+[ -z "$den" ] || ovr=(--override-input "$input" "$den")
+side den "${ovr[@]}"
 ovr=(--override-input "$input" "$dungeon")
 side dungeon "${ovr[@]}"
 
 declare -A D G
+for n in "${ignore[@]}"; do sed -i "/^$n /d" "$tmp/den.txt" "$tmp/dungeon.txt"; done
 while read -r k v; do D[$k]=$v; done < "$tmp/den.txt"
 while read -r k v; do G[$k]=$v; done < "$tmp/dungeon.txt"
+[ $((${#D[@]} + ${#G[@]})) -gt 0 ] || { echo "ERR    nothing to compare" >&2; exit 1; }
 bad=()
 printf '%-6s %s\n' STATUS ATTR
 for k in $(printf '%s\n' "${!D[@]}" "${!G[@]}" | sort -u); do

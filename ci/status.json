@@ -1,0 +1,8 @@
+{
+  "denRev": "27b25eeddd934dca1647025defec3275dcf9e9b9",
+  "entries": {
+    "minimal": "OK", "bogus": "OK", "noflake": "OK", "flake-parts-modules": "OK", "terranix-demo": "OK",
+    "nvf-standalone": "OK", "default": "OK", "example": "OK", "microvm": "OK", "fleet-demo": "OK"
+  },
+  "deadbugs": { "pass": 50, "total": 65 }
+}

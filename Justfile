@@ -1,21 +1,35 @@
 # run inside `nix develop ./dev`
-tpls := "minimal bogus noflake flake-parts-modules terranix-demo nvf-standalone default example microvm fleet-demo"
 
 default:
     @just --list
 
-# tier1 + gate (Den templates from the pinned Den rev, Den vs dungeon) + deadbugs summary
-ci: gate deadbugs
+# tier1 + gate (all registry entries) + deadbugs summary; writes ci/status.json
+ci:
+    just gate-all
+    just deadbugs
+    bash ci/status.sh /tmp/gate.out /tmp/deadbugs.tsv
 
-# tier1 + each template evaluated with den=Den vs den=this checkout. Den source: ci/den-rev (override: DEN_SRC=<dir|rev>)
-gate:
-    bash ci/gate.sh . "$(bash ci/den-src.sh ${DEN_SRC:-})" {{tpls}} | tee /dev/stderr | { ! grep -q FAIL; }
+# gate on every entry of registry.nix, output kept for ci/status.json
+gate-all:
+    bash ci/gate.sh . "$(bash ci/den-src.sh ${DEN_SRC:-})" | tee /tmp/gate.out /dev/stderr | { ! grep -q FAIL; }
+
+# tier1 + registry entries (default all) with den=Den vs den=this checkout. Den source: ci/den-rev (override: DEN_SRC=<dir|rev>)
+gate *entries:
+    bash ci/gate.sh . "$(bash ci/den-src.sh ${DEN_SRC:-})" {{entries}} | tee /dev/stderr | { ! grep -q FAIL; }
 
 # Den's deadbugs suites on dungeon (optional suite names). Report only: Den passes 65/65.
 deadbugs *suites:
     bash ci/deadbugs.sh "$(bash ci/den-src.sh ${DEN_SRC:-})" . /tmp/deadbugs.tsv {{suites}}
     @cut -f1,2 /tmp/deadbugs.tsv
     @echo "PASS: $(grep -c 'PASS' /tmp/deadbugs.tsv) / $(wc -l < /tmp/deadbugs.tsv)"
+
+# regenerate README.md and .github/workflows/* (dev/generated.nix: registry.nix + ci/status.json)
+write:
+    nix run "path:{{justfile_directory()}}?dir=dev#write-files"
+
+# fail if generated files are out of date
+check:
+    nix flake check "path:{{justfile_directory()}}?dir=dev"
 
 fmt:
     nixfmt $(fd -e nix -E ci -E node_modules .)

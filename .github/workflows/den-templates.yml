@@ -1,21 +1,31 @@
-# Compare each Den template (at the rev pinned in ci/den-rev): den=Den vs den=this repo.
-name: den-templates
-on: [push, pull_request, workflow_dispatch]
 jobs:
-  templates:
+  entry:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        template: [minimal, bogus, noflake, flake-parts-modules, terranix-demo, nvf-standalone, default, example, microvm, fleet-demo]
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - name: gate
-        env:
-          T: ${{ matrix.template }}
-        run: |
-          # shellcheck disable=SC2016
-          nix develop path:./dev -c bash -c 'bash ci/gate.sh . "$(bash ci/den-src.sh)" "$T" | tee /dev/stderr | { ! grep -q FAIL; }'
+      - env:
+          T: ${{ matrix.entry }}
+        name: gate
+        run: "# shellcheck disable=SC2016\nnix develop path:.?dir=dev -c bash -c 'bash ci/gate.sh . \"$(bash ci/den-src.sh)\" \"$T\" | tee /dev/stderr | { ! grep -q FAIL; }' "
+    strategy:
+      fail-fast: false
+      matrix:
+        entry:
+          - minimal
+          - bogus
+          - noflake
+          - flake-parts-modules
+          - terranix-demo
+          - nvf-standalone
+          - default
+          - example
+          - microvm
+          - fleet-demo
+name: den-templates
+"on":
+  - push
+  - pull_request
+  - workflow_dispatch
