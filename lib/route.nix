@@ -209,7 +209,7 @@ dungeon: {
         ++ dungeon.scopes.delivered sch host (hostArgs mF) (schemaPols "host" ++ memPols mF host.name);
     in
     {
-      inherit userModules argsOf userClosure defaultCl modulesFor;
+      inherit userModules argsOf userClosure defaultCl modulesFor hostCl;
       # home-manager.users.<u> gets default's then the user closure's homeManager parts; HM nixos module once, only if some user opts in.
       hm =
         inputs: hmUsers: chain:

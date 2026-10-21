@@ -28,7 +28,7 @@ dungeon: {
         # entity `aspect` = den.aspects.<name> (reference/schema.mdx:139,141); lazy: throws only when read
         # user aspect (reference/schema.mdx:185) applies where it exists; none = empty aspect. shortcut: `<user>@<host>` qualified aspect not merged yet.
         # collisionPolicy: entity value, else the kind level (reference/aspects.mdx:186-193)
-        hosts = builtins.mapAttrs (_: builtins.mapAttrs (n: h: h // { collisionPolicy = h.collisionPolicy or cfg.schema.host.collisionPolicy or null; aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); users = builtins.mapAttrs (u: v: v // { collisionPolicy = v.collisionPolicy or cfg.schema.user.collisionPolicy or null; aspect = aspects.${u} or { name = u; provides = { }; includes = [ ]; }; }) (h.users or { }); })) cfg.hosts;
+        hosts = builtins.mapAttrs (system: builtins.mapAttrs (n: h: h // { aspects = dungeon.entityAspects world cfg (h // { inherit system; }); collisionPolicy = h.collisionPolicy or cfg.schema.host.collisionPolicy or null; aspect = aspects.${n} or (throw "den: host `${n}` has no aspect"); users = builtins.mapAttrs (u: v: v // { collisionPolicy = v.collisionPolicy or cfg.schema.user.collisionPolicy or null; aspect = aspects.${u} or { name = u; provides = { }; includes = [ ]; }; }) (h.users or { }); })) cfg.hosts;
         batteries.primary-user = aspects.primary-user;
         batteries.define-user = aspects.define-user;
         batteries.hostname = aspects.hostname;
