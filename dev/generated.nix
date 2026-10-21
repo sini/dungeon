@@ -7,7 +7,7 @@ let
   row = e: "| ${e.name} | `${short e.flake}` | ${stateOf e.name} | ${lib.concatStringsSep "; " (lib.filter (x: x != "") [ e.notes (lib.optionalString (e.owner != "") "owner: ${e.owner}") ])} |";
   d = status.deadbugs;
   rows = lib.concatStringsSep "\n" (map row registry ++ [ "| deadbugs | Den `templates/ci/modules/deadbugs` | ${toString d.pass}/${toString d.total} | Den passes ${toString d.total}/${toString d.total} |" ]);
-  readme = lib.replaceStrings [ "@TABLE@" "@DENREV@" "@PASS@" "@TOTAL@" ] [ rows status.denRev (toString d.pass) (toString d.total) ] (builtins.readFile ./README.tmpl.md);
+  readme = lib.replaceStrings [ "@TABLE@" "@DENREV@" "@PASS@" "@TOTAL@" "@TPASS@" "@TTOTAL@" ] [ rows status.denRev (toString d.pass) (toString d.total) (toString d.tests.pass) (toString d.tests.total) ] (builtins.readFile ./README.tmpl.md);
 
   setup = [
     { uses = "actions/checkout@v4"; }
