@@ -29,34 +29,195 @@ dungeon: {
       };
     lib.policy.mkPolicy = name: fn: { __isPolicy = true; inherit name fn; };
     lib.policy.instantiate = x: { __effect = "instantiate"; value = x; };
-    # policy value: pipe.from k [collect pred] -> { __pipe; key; preds }
-    lib.policy.pipe = {
-      from = key: steps: { __pipe = true; inherit key; preds = map (s: s.pred) steps; };
-      collect = pred: { inherit pred; };
-    };
-    # modules for host h; allHosts = name -> { host; config (lazy final nixos config) }
+    # reference/quirks.mdx:109-318 pipe builder: `pipe.from` is a policy effect; stages are inert records read by `modules`.
+    lib.policy.pipe =
+      let
+        st = kind: extra: { __stage = kind; } // extra;
+      in
+      {
+        from = key: stages: { __effect = "pipe"; key = if builtins.isAttrs key then key.name else key; inherit stages; };
+        filter = f: st "filter" { inherit f; };
+        transform = f: st "transform" { inherit f; };
+        fold = f: init: st "fold" { inherit f init; };
+        append = value: st "append" { inherit value; };
+        for = f: st "for" { inherit f; };
+        withProvenance = st "withProvenance" { };
+        as = target: st "as" { target = if builtins.isAttrs target then target.name else target; };
+        expose = st "expose" { };
+        collect = pred: st "collect" { inherit pred; };
+        collectAll = pred: st "collectAll" { inherit pred; };
+        broadcast = pred: st "broadcast" { inherit pred; };
+        to = aspects: st "to" { inherit aspects; };
+      };
+    # `_module.args` per quirk for host h's OS eval; allHosts = name -> { host; config (lazy final OS config) }.
+    # A quirk pool is a gen-view channel (gen-view compositions.nix:111) over the scope graph `den:fleet` <-parent- scopes,
+    # data authored only at the gathered scopes (authoring is the declaration: gen-view README "The data component");
+    # value stages are gen-view transforms (gen-view transform.nix: map :69, over :124), applied in list order.
     modules =
       world: allHosts: h: sibs:
       let
-        call = f0: a: let f = if builtins.isAttrs f0 && (f0.__isPolicy or false) then f0.fn else f0; in if builtins.isFunction f then f (builtins.intersectAttrs (builtins.functionArgs f) a) else f;
-        pipes = builtins.filter (p: builtins.isAttrs p && p ? __pipe) (
-          builtins.concatMap (p: let r = call p { host = h; }; in if builtins.isList r then r else [ r ]) world.schema.host.includes
-        );
-        # self first, then sibling scopes (same parent) in attrName order (fleet.mdx:101-102)
-        order = [ h.name ] ++ builtins.filter (n: n != h.name && allHosts ? ${n}) sibs;
-        cl = n: dungeon.closure world.aspects world.aspects.default ++ dungeon.closure world.aspects world.aspects.${n};
-        emit =
-          k: n:
+        v = dungeon.gen.view;
+        sc = dungeon.gen.scope;
+        root = "den:fleet";
+        labels = v.edgeLabels { letters = [ "parent" ]; };
+        relations = v.relations { names = [ "quirk" ]; };
+        admission = sc.wellFormed { alphabet = labels.letters; expression = "parent"; };
+        order = sc.labelOrder { alphabet = labels.letters; layers = [ [ "parent" ] ]; endOfPath = -1; };
+        identityMark = sc.labelOrder { alphabet = labels.letters; layers = [ [ "parent" ] ]; endOfPath = 0; };
+        # relation of quirk k over `data` = [ { scope; datum = [ value ]; } ]; authored order is kept
+        relationOf =
+          k: data:
           let
-            e = allHosts.${n};
-            args = { inherit (e) host config; };
+            carrier = v.carrier {
+              inherit labels relations;
+              relatumLabels = v.relatumLabels { names = [ ]; };
+              labelWellFormedness = admission;
+              labelOrder = order;
+              dataOrder = v.dataOrder { channel = k; keyOf = _: k; };
+            };
           in
-          builtins.concatMap (a: if a.quirks ? ${k} then [ (call a.quirks.${k} args) ] else [ ]) (cl n);
-        collected =
-          p: builtins.concatMap (n: if builtins.all (pr: call pr { host = allHosts.${n}.host; } == true) p.preds then emit p.key n else [ ]) order;
+          v.viewRelation {
+            engine = sc;
+            definition = v.compositions.channel {
+              channel = k;
+              relation = "quirk";
+              inherit root admission order;
+              direction = "inbound";
+              wellFormed = _: true;
+              tieSet = v.tieSets.union;
+              empty = [ ];
+              combine = v.combines.listAppend;
+              dedup = v.dedups.none;
+            };
+            graph = v.scopeGraph {
+              inherit carrier;
+              scopes = [ root ] ++ map (d: d.scope) data;
+              edges.parent = id: if id == root then [ ] else [ root ];
+              data = map (d: { inherit (d) scope datum; relation = "quirk"; }) data;
+            };
+            marks = _: [ ];
+            orderMark = identityMark;
+          };
+        # one value stage over a relation; merged contributions (append/fold/for) land at the consuming scope `self`
+        valueStage =
+          self: ctxOf: r: s:
+          let
+            name = "${r.name}>${s.__stage}";
+            each = f: v.transform.map { relation = r; inherit name f; };
+            whole = f: v.transform.over { relation = r; inherit name; f = cs: f cs; };
+            all = cs: builtins.concatMap (c: c.datum) cs;
+            at = datum: { scope = self; inherit datum; };
+            fns = {
+              filter = each (c: builtins.filter s.f c.datum);
+              transform = each (c: map s.f c.datum);
+              withProvenance = each (c: map (x: { value = x; source = ctxOf c.scope; }) c.datum);
+              append = whole (cs: cs ++ [ (at [ s.value ]) ]);
+              fold = whole (cs: [ (at [ (builtins.foldl' s.f s.init (all cs)) ]) ]);
+              for = whole (cs: let o = s.f (all cs); in if builtins.isList o then [ (at o) ] else throw "den: pipe.for must return a list (got ${builtins.typeOf o}); wrap it as [ x ]");
+            };
+          in
+          if fns ? ${s.__stage} then fns.${s.__stage} else r;
+        known = [ "filter" "transform" "withProvenance" "append" "fold" "for" "as" "expose" "collect" "collectAll" ];
+        checkStages =
+          where: p:
+          let
+            kinds = map (s: s.__stage or (throw "den: pipe `${p.key}` at ${where}: a stage is not a pipe stage")) p.stages;
+            bad = builtins.filter (k: !builtins.elem k known) kinds;
+            count = k: builtins.length (builtins.filter (x: x == k) kinds);
+          in
+          if bad != [ ] then throw "den: pipe `${p.key}` at ${where}: stage pipe.${builtins.head bad} is not supported (needs per-aspect/per-scope delivery)"
+          else if count "for" > 1 then throw "den: pipe `${p.key}` at ${where}: at most one pipe.for per pipe per scope (reference/quirks.mdx:184)"
+          else if count "collect" + count "collectAll" > 1 then throw "den: pipe `${p.key}` at ${where}: more than one collect stage"
+          else p;
+        # the one policy firer (policy.nix:7)
+        pipesAt =
+          where: ctx: pols:
+          map (checkStages where) (
+            dungeon.effectsOf "pipe" (
+              dungeon.firePols ctx pols
+            )
+          );
+        # a raw fn in schema includes is a policy named by its slot (policy.nix fired).
+        # shortcut: `policy.when` functors are not fired here: their guard reads route.nix's projected `host.hasAspect` (route.nix hostE), which this ctx lacks; fire them once channels reads route's scope ctx.
+        polsOf =
+          kind: cl:
+          builtins.concatMap (p: if p.__isPolicy or false then [ p ] else if builtins.isFunction p then [ { name = "schema.${kind}"; fn = p; } ] else [ ]) (world.schema.${kind}.includes or [ ])
+          ++ dungeon.uniqPols (builtins.concatMap (a: a.policyIncs) cl);
+        clOf = n: if world.aspects ? ${n} then dungeon.closure world.aspects world.aspects.${n} else [ ];
+        # policy.exclude of the host scope policies drops those aspects (by name, as route.nix excludedAt).
+        # shortcut: re-fires host policies beside route.nix; read route's host membership (act.members) once hosts.nix threads it.
+        hostCl =
+          n:
+          let
+            cl = dungeon.closure world.aspects world.aspects.default ++ clOf n;
+            ex = map (e: e.value.name) (builtins.filter (e: e.value ? name) (dungeon.effectsOf "exclude" (dungeon.firePols { host = hostOf n; } (polsOf "host" cl))));
+          in
+          builtins.filter (a: !builtins.elem a.name ex) cl;
+        # reference/quirks.mdx:69-79: lists auto-flatten; a fn is called with the scope ctx (a config thunk gets the producer config)
+        emits =
+          cl: ctx: k:
+          builtins.concatMap (
+            a:
+            if a.quirks ? ${k} then
+              let
+                x = a.quirks.${k};
+                r = if builtins.isFunction x then x (builtins.intersectAttrs (builtins.functionArgs x) ctx) else x;
+              in
+              if builtins.isList r then r else [ r ]
+            else
+              [ ]
+          ) cl;
+        hostOf = n: if n == h.name then h else allHosts.${n}.host;
+        hostCtx = n: { host = hostOf n; inherit (allHosts.${n}) config; };
+        # user producer config = its home-manager config, host config as osConfig (reference/quirks.mdx:327-333)
+        userCtx = n: u: {
+          host = hostOf n;
+          user = (hostOf n).users.${u};
+          osConfig = allHosts.${n}.config;
+          config = allHosts.${n}.config.home-manager.users.${u} or (throw "den: quirk thunk of user `${u}`@`${n}` reads `config`, but the user has no home-manager config");
+        };
+        has = st: p: builtins.any (s: s.__stage == st) p.stages;
+        runValue = self: ctxOf: r: p: builtins.foldl' (valueStage self ctxOf) r p.stages;
+        # pipe.expose (reference/quirks.mdx:218-232): each user's pool after its value stages, lifted into the host pool
+        exposed =
+          n: k:
+          builtins.concatMap (
+            u:
+            let
+              cl = clOf u;
+              ctx = userCtx n u;
+              sid = "${u}@${n}";
+              scopeCtx = { inherit (ctx) host user; };
+              ps = builtins.filter (p: p.key == k && has "expose" p) (pipesAt "schema.user" scopeCtx (polsOf "user" cl));
+            in
+            builtins.concatMap (p: (runValue sid (_: scopeCtx) (relationOf k [ { scope = sid; datum = emits cl ctx k; } ]) p).value) ps
+          ) (builtins.attrNames (hostOf n).users);
+        local = n: k: emits (hostCl n) (hostCtx n) k ++ exposed n k;
+        # self first, then sibling scopes (same parent) in attrName order (fleet.mdx:101-102); collectAll: every host
+        sibOrder = [ h.name ] ++ builtins.filter (n: n != h.name && allHosts ? ${n}) sibs;
+        allOrder = [ h.name ] ++ builtins.filter (n: n != h.name) (builtins.attrNames allHosts);
+        # entity kind filtering (reference/quirks.mdx:244-248): a host scope is gathered only by a predicate requiring `host`
+        matches = pred: n: (builtins.functionArgs pred) ? host && pred { host = hostOf n; } == true;
+        gathered =
+          p:
+          let
+            c = builtins.filter (s: s.__stage == "collect" || s.__stage == "collectAll") p.stages;
+            pick = s: builtins.filter (matches s.pred) (if s.__stage == "collectAll" then allOrder else sibOrder);
+            scopes = if c == [ ] then [ h.name ] else pick (builtins.head c);
+          in
+          relationOf p.key (map (n: { scope = n; datum = local n p.key; }) scopes);
+        target =
+          p:
+          let
+            a = builtins.filter (s: s.__stage == "as") p.stages;
+            t = (builtins.head a).target;
+          in
+          if a == [ ] then p.key else if t == p.key then throw "den: pipe.as `${p.key}`: target must be a different pipe" else t;
+        pipes = builtins.filter (p: !has "expose" p) (pipesAt "schema.host" { host = h; } (polsOf "host" (hostCl h.name)));
+        delivered = builtins.groupBy (o: o.key) (map (p: { key = target p; value = (runValue h.name (n: { host = hostOf n; }) (gathered p) p).value; }) pipes);
+        one = k: os: if builtins.length os == 1 then (builtins.head os).value else throw "den: ${toString (builtins.length os)} pipes deliver quirk `${k}` at host `${h.name}`";
       in
-      map (p: { _module.args.${p.key} = collected p; }) pipes
-      # docs quirks-and-pipes: a declared quirk is always bound, [] when nothing is emitted
-      ++ map (k: { _module.args.${k} = [ ]; }) (builtins.filter (k: !builtins.any (p: p.key == k) pipes) (builtins.attrNames (world.quirks or { })));
+      # a declared quirk is always bound; without a pipe it is the host scope's own pool (reference/quirks.mdx:97-104)
+      [ { _module.args = builtins.mapAttrs (k: _: local h.name k) (world.quirks or { }) // builtins.mapAttrs one delivered; } ];
   };
 }
