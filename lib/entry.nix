@@ -63,24 +63,32 @@ let
         let
           den = config._module.args.den;
           cl = dungeon.closure den.aspects;
+          # guides/standalone-home-manager.mdx:96-110: default intoAttr [ "homeConfigurations" name ]; a name defaulted on two systems gets `@<system>`.
+          defaulted = lib.concatLists (lib.mapAttrsToList (_: hs: builtins.attrNames (lib.filterAttrs (_: h: !(h ? intoAttr)) hs)) den.homes);
+          outName = system: name: h:
+            if !(h ? intoAttr) then (if lib.count (n: n == name) defaulted > 1 then "${name}@${system}" else name)
+            else if builtins.length h.intoAttr == 2 && builtins.head h.intoAttr == "homeConfigurations" then builtins.elemAt h.intoAttr 1
+            else throw "den: home `${name}`: intoAttr ${builtins.toJSON h.intoAttr} outside homeConfigurations is unsupported";
         in
         lib.concatMapAttrs (
           system: hs:
-          lib.mapAttrs (
+          lib.mapAttrs' (
             name: h:
-            inputs.home-manager.lib.homeManagerConfiguration {
+            lib.nameValuePair (outName system name h) (inputs.home-manager.lib.homeManagerConfiguration {
               pkgs = inputs.nixpkgs.legacyPackages.${system};
               modules =
                 let
                   base = lib.head (lib.splitString "@" name);
                   args = { home = h // { inherit name system; }; user = h // { inherit system; name = base; userName = base; }; };
                   dcl = cl den.aspects.default;
-                  scope = dungeon.schemaCl den.schema den.aspects true "home" ++ lib.concatMap (n: lib.optionals (den.aspects ? ${n}) (cl den.aspects.${n})) (lib.unique [ name base ]);
+                  scope = dungeon.schemaCl den.schema den.aspects true "home" ++ lib.concatMap (n: lib.optionals (den.aspects ? ${n}) (cl den.aspects.${n})) (lib.unique [ name base ])
+                    # standalone-home-manager.mdx:184-186: `provides.<host>` on the user aspect, only this home's host
+                    ++ lib.optionals (h.hostName != null && den.aspects ? ${base} && (den.aspects.${base}.provides or { }) ? ${h.hostName}) (cl den.aspects.${base}.provides.${h.hostName});
                 in
                 lib.concatMap (a: lib.optional (a.content ? homeManager) (dungeon.content.classModule args a.content.homeManager)) (
                   dcl ++ scope ++ dungeon.routes dcl [ ] args (dcl ++ scope)
                 );
-            }
+            })
           ) hs
         ) den.homes;
     };

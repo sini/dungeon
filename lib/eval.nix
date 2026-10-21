@@ -14,7 +14,7 @@ dungeon: {
       cfg = inner.config;
       aspects = builtins.mapAttrs (n: a: if cfg.policyRecs ? ${n} then a // { policies = cfg.policyRecs.${n}; } else a) (dungeon.view.mkAspects cfg);
       # callable aspects: `den.aspects.f arg` = the raw fn applied, as an inline aspect (rawFns are the inner, unwrapped eval)
-      wrapped = builtins.mapAttrs (n: a: a // { __functor = _: arg: cfg.rawFns.${n} arg; }) aspects;
+      wrapped = builtins.mapAttrs (n: a: a // { __functor = _: arg: if cfg.rawFns ? ${n} then cfg.rawFns.${n} arg else dungeon.parametric.fixedTo arg a; }) aspects;
       world = {
         aspects = wrapped;
         rawAspects = aspects;
