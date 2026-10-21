@@ -30,5 +30,7 @@ dungeon: {
       subs = if options.flake._type or null == "option" then options.flake.type.getSubOptions [ ] else options.flake;
       classes = builtins.filter (n: subs ? ${n}) [ "packages" "apps" "checks" "devShells" "legacyPackages" ];
     in
-    lib.optionalAttrs (world.schema ? flake-system && root.includes != [ ]) (lib.genAttrs classes (cls: lib.genAttrs systems (eval cls)));
+    lib.optionalAttrs (world.schema ? flake-system && root.includes != [ ]) (lib.genAttrs classes (cls: lib.genAttrs systems (eval cls)))
+    # custom-kind policy.instantiate results land at flake.<intoAttr> (reference/policies.mdx:162-172); host ones: instantiate.nix
+    // builtins.foldl' (acc: i: lib.recursiveUpdate acc (lib.setAttrByPath i.path i.value)) { } (dungeon.policy world).customInsts;
 }

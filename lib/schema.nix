@@ -29,7 +29,8 @@ dungeon: {
         kind:
         t.submodule (
           {
-            imports = (kind.imports or [ ]) ++ extraModules ++ [ (dungeon.schema.entity kind) ];
+            # instance `name` defaults to its attr name (gen-schema lib/instance.nix options.name). shortcut: hand-rolled; swap to gen-schema mkInstanceType once den.schema kinds are minted gen-schema kinds.
+            imports = (kind.imports or [ ]) ++ extraModules ++ [ (dungeon.schema.entity kind) ({ name, ... }: { options.name = dungeon.genLib.mkOption { type = t.str; default = name; }; }) ];
           }
           // (if strict then { } else { freeformType = t.lazyAttrsOf t.raw; })
         );

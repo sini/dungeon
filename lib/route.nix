@@ -44,7 +44,8 @@ dungeon: {
       schemaRefs = schemaCl false "host";
       # schema.hm-host.includes (batteries.mdx): only on hosts with an HM user, applied in `hm`
       hmHostCl = schemaCl true "hm-host";
-      hostBase = schemaRefs ++ (if aspects ? ${host.name} then cl aspects.${host.name} else [ ]);
+      # instance-own includes join the host scope like schema.host.includes (custom-entity-kinds.mdx:47-49)
+      hostBase = schemaRefs ++ dungeon.schemaCl { host = { inherit (host) includes; }; } aspects true "host" ++ (if aspects ? ${host.name} then cl aspects.${host.name} else [ ]);
       # schema.<kind>.includes policies (possibly nested in `includes` lists); non-policy elements are skipped
       schemaPols =
         kind:
@@ -75,8 +76,10 @@ dungeon: {
       # policy.exclude of host-closure/schema policies drops those aspects from the scope subtree (names; shortcut: not the excluder's exclusive subtree).
       excludedAt = args: pols: map (e: e.value.name) (builtins.filter (e: e.value ? name) (dungeon.effectsOf "exclude" (dungeon.firePols args pols)));
       # schema.<kind>.excludes aspect refs: authoritative over includes (reference/schema.mdx, policies.mdx:245)
-      schemaEx = kind: map (b: b.name) (builtins.filter (b: builtins.isAttrs b && b ? name && !(b.__isPolicy or false) && !(b ? __builtin)) (sch.${kind}.excludes or [ ]));
-      hostEx = m: schemaEx "host" ++ excludedAt (hostArgs m) (builtins.concatMap (a: a.policyIncs) hostBase ++ schemaPols "host");
+      exNames = xs: map (b: b.name) (builtins.filter (b: builtins.isAttrs b && b ? name && !(b.__isPolicy or false) && !(b ? __builtin)) xs);
+      schemaEx = kind: exNames (sch.${kind}.excludes or [ ]);
+      # instance-own excludes are as authoritative as the kind's (custom-entity-kinds.mdx:47-49)
+      hostEx = m: schemaEx "host" ++ exNames host.excludes ++ excludedAt (hostArgs m) (builtins.concatMap (a: a.policyIncs) hostBase ++ schemaPols "host");
       hostCl = act.members host.name;
       userScope = u: "${u}@${host.name}";
       allUsers = users ++ builtins.attrNames host.users;
@@ -141,7 +144,7 @@ dungeon: {
             # parametric include `{ host }: { <class> = ...; }` binds the scope ctx (tutorials/microvm.mdx stage 1)
             else if builtins.isFunction x.e.value then [ { name = "${x.p.name}#${toString x.i}"; content = x.e.value (builtins.intersectAttrs (dungeon.genLib.functionArgs x.e.value) args); includes = [ ]; quirks = { }; policyIncs = [ ]; } ]
             else if x.e.value ? name then cl (declared x.e.value.name)
-            else if x.e.value ? includes then builtins.concatMap (b: cl aspects.${b.name}) x.e.value.includes
+            else if x.e.value ? includes then builtins.concatMap (b: cl (declared b.name)) x.e.value.includes
             else [ { name = "${x.p.name}#${toString x.i}"; content = x.e.value; includes = [ ]; quirks = { }; policyIncs = [ ]; } ];
         in
         builtins.concatMap inc eff;
@@ -171,7 +174,17 @@ dungeon: {
           # an aspect reached through to-hosts brings its own to-hosts along (late-registered-to-hosts projection-chain); seen cuts cycles
           th = seen: a: builtins.concatMap (b: if builtins.elem b.name seen then [ ] else [ b ] ++ th (seen ++ [ b.name ]) b) (provOf "to-hosts" a);
         in
-        builtins.concatMap (nixosOf (argsOf u)) (builtins.concatMap (th [ ]) (userClosure u));
+        builtins.concatMap (nixosOf (quirkArgs u)) (builtins.concatMap (th [ ]) (userClosure u));
+      # user-scope class modules read the user scope's own quirk pool, not the host's (reference/quirks.mdx:97-104); bound per module, so it never leaks to host-scope modules
+      # shortcut: only keys the user closure emits are bound and a config-reading user thunk throws; upgrade with the user HM config ctx (channels.nix userCtx).
+      quirkArgs =
+        u:
+        let
+          cl = userClosure u;
+          val = k: x: if !builtins.isFunction x then x else if builtins.all (n: (argsOf u) ? ${n}) (builtins.attrNames (dungeon.genLib.filterAttrs (_: o: !o) (builtins.functionArgs x))) then x (builtins.intersectAttrs (builtins.functionArgs x) (argsOf u)) else throw "den: quirk `${k}` thunk at user `${u}` reads args beyond the user scope ctx (config): not built yet";
+          pool = k: builtins.concatMap (a: if a.quirks ? ${k} then (let r = val k a.quirks.${k}; in if builtins.isList r then r else [ r ]) else [ ]) cl;
+        in
+        argsOf u // builtins.listToAttrs (map (k: { name = k; value = pool k; }) (builtins.concatMap (a: builtins.attrNames a.quirks) cl));
       # OS content lands once per host: a user-closure aspect whose minted identity is already in the host scope is not re-delivered (cross-scope dedup by id_hash; synthetic records carry none)
       hostIds = builtins.listToAttrs (map (a: { name = a.id_hash; value = true; }) (builtins.filter (a: a ? id_hash) (defaultCl ++ hostCl ++ tuCl)));
       # every host user gets users.users.<u> even with no user-class content

@@ -48,6 +48,18 @@ dungeon: {
         in
         {
           inherit kind ctx;
+          # policy.instantiate custom spec at a custom-kind scope (reference/policies.mdx:162-172): class bucket of the
+          # kind's includes + the instance's own includes, minus both excludes (custom-entity-kinds.mdx:47-49)
+          customInsts =
+            let
+              inst = ctx.${kind};
+              cl = dungeon.schemaCl world.schema world.aspects true kind ++ dungeon.schemaCl { ${kind}.includes = inst.includes; } world.aspects true kind;
+              ex = map (b: b.name) (builtins.filter (b: builtins.isAttrs b && b ? name && !dungeon.isPol b) ((sch.excludes or [ ]) ++ inst.excludes));
+              modulesOf = cls: map (a: dungeon.content.classModule { ${kind} = inst; } a.content.${cls}) (builtins.filter (a: a.content ? ${cls} && !builtins.elem a.name ex) cl);
+              # a custom spec (class + instantiate + intoAttr); an entity (registered host) instantiates through hosts.nix
+              custom = v: v ? class && v ? instantiate && v ? intoAttr && !builtins.any (s: world.hosts.${s} ? ${v.name or ""}) (builtins.attrNames world.hosts);
+            in
+            if builtins.elem kind [ "flake" "host" "user" ] then [ ] else map (e: { path = e.value.intoAttr; value = e.value.instantiate { modules = modulesOf e.value.class; }; }) (builtins.filter (e: custom e.value) (eff "instantiate"));
           on = n: (m.resolve "b:${n}").included;
           instantiated = map (e: e.value.name) (eff "instantiate");
           children = map (e: mk e.kind (ctx // e.bindings) excl (path ++ [ (key e) ])) (builtins.filter (e: e ? kind && !(builtins.elem (key e) path)) (eff "resolve"));
@@ -62,6 +74,7 @@ dungeon: {
       inherit tree;
       osOutputs = tree.on "system-to-os-outputs";
       instantiated = builtins.concatMap (s: s.instantiated) all;
+      customInsts = builtins.concatMap (s: s.customInsts) all;
       # declared host.users first, then resolved user children of every scope of that host
       usersOf = h: h.users // builtins.listToAttrs (builtins.concatMap (hs: map (u: { name = u.ctx.user.name; value = u.ctx.user; }) (builtins.filter (s: s.kind == "user") (scopes hs))) (hostScopes h));
       # same parent scope; no scope for h (no fleet) means all hosts
