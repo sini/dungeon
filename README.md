@@ -26,7 +26,7 @@ Templates: `drvPath` equal to Den.
 | microvm | equal |
 | fleet-demo | hosts equal; `den-diagram` packages out of scope |
 
-Deadbugs (`templates/ci/modules/deadbugs`, 65 suites): dungeon passes 39/65. Den passes 65/65.
+Deadbugs (Den's `templates/ci/modules/deadbugs`, 65 suites): dungeon passes 50/65. Den passes 65/65.
 
 ## Try it
 
@@ -37,10 +37,11 @@ nix eval --override-input den github:vic/dungeon .#nixosConfigurations.<host>.co
 nix build --override-input den github:vic/dungeon .#nixosConfigurations.<host>.config.system.build.toplevel
 ```
 
-Template:
+Start from a Den template and override `den`:
 
 ```
-nix flake init -t github:vic/dungeon#minimal
+nix flake init -t github:denful/den#minimal
+nix eval --override-input den github:vic/dungeon .#nixosConfigurations.igloo.config.system.build.toplevel.drvPath
 ```
 
 ## Compare with Den and report
@@ -70,11 +71,15 @@ Exit code is 1 when something differs.
 nix develop ./dev     # just, nix-unit, nixfmt, gh, jq, ripgrep, fd, actionlint
 just --list
 just ci               # tier1 + gate on all templates + deadbugs summary
-just gate             # templates vs committed Den baselines (templates/ci/baselines)
-just deadbugs [suite] # deadbugs on dungeon
+just gate             # Den templates at the pinned rev: den=Den vs den=dungeon, drvPaths equal
+just deadbugs [suite] # Den's deadbugs suites on dungeon
 just diff <flake>     # drvPathDiff against this checkout
 just fmt
 ```
+
+Den's templates and deadbugs are not copied here. `ci/den-rev` pins the Den rev they are fetched from (`ci/den-src.sh` prints the source path).
+Override once with `DEN_SRC=<dir|rev> just gate`. Bump the pin: `nix flake metadata github:denful/den --json | jq -r .locked.rev > ci/den-rev`.
+Deadbugs run Den's own `templates/ci` flake (all its modules) with `--override-input den path:<dungeon>`.
 
 ## CI
 

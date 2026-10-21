@@ -1,5 +1,0 @@
-igloo /nix/store/6ypiwnid9hgw8435bbwm0saq3myx896w-nixos-system-nixos-26.05.20260415.566acc0.drv
-cowsay /nix/store/aagm8l0ildfw2nlr3s12ykr53ld6842d-cowsay-3.8.4.drv
-hola /nix/store/7mdg60drrnh0wq1j8hmmbhll47czm107-hello-2.12.3.drv
-htop /nix/store/sbd53krnaxyc6hdfnddm8ff5gmi9md0x-htop-3.5.0.drv
-write-files /nix/store/xh81md4kw7w8qb45z8xg2d9h3gniz6kq-write-files.drv

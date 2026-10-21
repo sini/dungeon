@@ -16,6 +16,5 @@
     namespace = dungeon.namespace;
     flakeModules.denTest = dungeon.ciSurface.denTestModule;
     flakeOutputs = dungeon.ciSurface.flakeOutputs;
-    templates.minimal = { path = ./templates/minimal; description = "dungeon minimal"; };
   };
 }
