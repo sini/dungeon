@@ -4,7 +4,7 @@
 dungeon: {
   resolve =
     world: class: root:
-    if root ? __entityKind then dungeon.resolveEntityModule world class root.ctx.host else
+    if root.__entityKind or null == "host" then dungeon.resolveEntityModule world class root.ctx.host else
     let
       lib = dungeon.genLib;
       ctx = root.__ctx or { };

@@ -3,13 +3,17 @@ let
   # Only these leaves are captured; `den.users` etc. stay free for user-declared outer options.
   leaves = [ "hosts" "aspects" "schema" "policies" "quirks" "classes" "homes" "default" "systems" ];
   # Each outer definition becomes one Gen module rooted at the leaf (design-den-option.md option A).
+  toModules = lib: leaf: map (d: if leaf == "aspects" || leaf == "default" then lower lib leaf d else { _file = d.file; ${leaf} = if leaf == "policies" && builtins.isAttrs d.value then builtins.mapAttrs (name: v: if v.__isPolicy or false then v else { __isPolicy = true; inherit name; fn = v; }) d.value else d.value; });
+  # `config.den.<leaf>` reads back the world value (deadbugs 216 reads `ev.config.den.aspects.foo`); evalDen takes
+  # the leaf's definitionsWithLocations (toModules), so the readback never feeds its own input.
+  # definitionsWithLocations is reverse module order (nixpkgs); reversed back so Gen's merge sees the authored module order
+  # and class content keeps the order nixpkgs deferredModule would give (deadbugs 216 [ "foo" "bar" ]).
   capture =
-    lib: leaf:
+    lib: w: leaf:
     lib.mkOption {
       type = lib.mkOptionType {
         name = "dungeonLeaf";
-        emptyValue = { value = [ ]; };
-        merge = _loc: defs: map (d: if leaf == "aspects" || leaf == "default" then lower lib leaf d else { _file = d.file; ${leaf} = if leaf == "policies" && builtins.isAttrs d.value then builtins.mapAttrs (name: v: if v.__isPolicy or false then v else { __isPolicy = true; inherit name; fn = v; }) d.value else d.value; }) defs;
+        merge = _loc: _defs: if leaf == "default" then w.aspects.default else w.${leaf};
       };
     };
   # Lowering lives in normalize.nix; this only shapes the Gen module (inline includes -> anon aspects, design-fleet G3 arm a).
@@ -42,7 +46,7 @@ let
     declareFlake:
     { lib, config, options, inputs, ... }@margs:
     let
-      w = dungeon.evalDen (lib.concatMap (l: lib.optionals options.den.${l}.isDefined config.den.${l}) leaves ++ lib.optional (margs ? withSystem) { _module.args.withSystem = margs.withSystem; });
+      w = dungeon.evalDen (lib.concatMap (l: lib.optionals options.den.${l}.isDefined (toModules lib l (lib.reverseList options.den.${l}.definitionsWithLocations))) leaves ++ lib.optional (margs ? withSystem) { _module.args.withSystem = margs.withSystem; });
     in
     {
       # freeform `flake` (keyed: dedups with a user flakeOutputs.flake import) + typed outputs dungeon writes.
@@ -53,7 +57,7 @@ let
       ) ++ lib.optional (margs ? flake-parts-lib) ({ den, ... }: dungeon.flakeParts den lib)
       ++ [ ({ den, ... }: { flake = dungeon.instantiates den lib; }) ({ options, ... }: { config.flake = dungeon.outputs config._module.args.den inputs options; }) ({ den, ... }: { config.flake = hostsElsewhere den inputs lib; }) ];
       # config.den.lib is the builtin lib with user definitions deep-merged over it (both `den.lib` and `config.den.lib` read it).
-      options.den = lib.genAttrs leaves (capture lib) // { lib = lib.mkOption { default = { }; type = lib.mkOptionType { name = "denLib"; merge = _: defs: builtins.foldl' lib.recursiveUpdate w.lib (map (d: d.value) defs); }; }; };
+      options.den = lib.genAttrs leaves (capture lib w) // { lib = lib.mkOption { default = { }; type = lib.mkOptionType { name = "denLib"; merge = _: defs: builtins.foldl' lib.recursiveUpdate w.lib (map (d: d.value) defs); }; }; };
       config._module.args.den = w // { lib = config.den.lib; };
       # schema.mdx:166-171: each host lands at its intoAttr (nixosConfigurations / darwinConfigurations)
       config.flake.nixosConfigurations = hostsAt config._module.args.den inputs "nixosConfigurations";

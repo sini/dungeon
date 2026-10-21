@@ -49,8 +49,9 @@ dungeon: {
         lib.nh = dungeon.nh cfg.hosts cfg.homes;
         lib.policy = dungeon.channels.lib.policy;
         lib.aspects.resolve = dungeon.resolve world;
-        # reference/lib.mdx:62-83: only "host" entities resolve (route.nix host pipeline, resolve.nix); other kinds throw.
-        lib.resolveEntity = kind: ctx: if kind == "host" then { __entityKind = "host"; inherit ctx; } else throw "den.lib.resolveEntity: kind `${kind}` unsupported";
+        # reference/lib.mdx:62-83: "host" runs the host pipeline (route.nix, resolve.nix); other kinds are the aspect-like
+        # record over den.schema.<kind> (name, meta, includes, excludes, __entityKind) with ctx pinned as fixedTo does.
+        lib.resolveEntity = kind: ctx: if kind == "host" then { __entityKind = "host"; inherit ctx; } else { name = kind; meta = { }; includes = cfg.schema.${kind}.includes or [ ]; excludes = cfg.schema.${kind}.excludes or [ ]; __entityKind = kind; __ctx = ctx; };
         batteries.forward = dungeon.forward world;
         lib.schema = dungeon.schema.lib;
         # den-diagram capture (reference/diag.mdx:321-332) is out of scope (vic 2026-10-20): explicit throw, catchable by tryEval.
