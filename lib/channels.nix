@@ -53,7 +53,10 @@ dungeon: {
     # A quirk pool is a gen-view channel (gen-view compositions.nix:111) over the scope graph `den:fleet` <-parent- scopes,
     # data authored only at the gathered scopes (authoring is the declaration: gen-view README "The data component");
     # value stages are gen-view transforms (gen-view transform.nix: map :69, over :124), applied in list order.
-    modules =
+    # `targeted` = aspect name -> { <quirk> = pipe output } for `pipe.to` pipes (reference/quirks.mdx:297-301): no gen-view
+    # facility delivers per consumer, so route.nix binds it into those aspects' class modules (gen-bind wrap).
+    modules = world: allHosts: h: sibs: (dungeon.channels.of world allHosts h sibs).modules;
+    of =
       world: allHosts: h: sibs:
       let
         v = dungeon.gen.view;
@@ -117,7 +120,7 @@ dungeon: {
             };
           in
           if fns ? ${s.__stage} then fns.${s.__stage} else r;
-        known = [ "filter" "transform" "withProvenance" "append" "fold" "for" "as" "expose" "collect" "collectAll" ];
+        known = [ "filter" "transform" "withProvenance" "append" "fold" "for" "as" "expose" "collect" "collectAll" "to" ];
         checkStages =
           where: p:
           let
@@ -214,10 +217,17 @@ dungeon: {
           in
           if a == [ ] then p.key else if t == p.key then throw "den: pipe.as `${p.key}`: target must be a different pipe" else t;
         pipes = builtins.filter (p: !has "expose" p) (pipesAt "schema.host" { host = h; } (polsOf "host" (hostCl h.name)));
-        delivered = builtins.groupBy (o: o.key) (map (p: { key = target p; value = (runValue h.name (n: { host = hostOf n; }) (gathered p) p).value; }) pipes);
+        out = p: { key = target p; value = (runValue h.name (n: { host = hostOf n; }) (gathered p) p).value; };
+        toOf = p: builtins.filter (s: s.__stage == "to") p.stages;
+        delivered = builtins.groupBy (o: o.key) (map out (builtins.filter (p: toOf p == [ ]) pipes));
         one = k: os: if builtins.length os == 1 then (builtins.head os).value else throw "den: ${toString (builtins.length os)} pipes deliver quirk `${k}` at host `${h.name}`";
+        # only the named aspects receive a pipe.to pipe's data; other consumers see the unmodified pool (reference/quirks.mdx:299-300)
+        toPairs = builtins.concatMap (p: let o = out p; in builtins.concatMap (s: map (a: { aspect = a.name or (throw "den: pipe.to `${p.key}`: target is not an aspect"); inherit (o) key value; }) s.aspects) (toOf p)) pipes;
       in
-      # a declared quirk is always bound; without a pipe it is the host scope's own pool (reference/quirks.mdx:97-104)
-      [ { _module.args = builtins.mapAttrs (k: _: local h.name k) (world.quirks or { }) // builtins.mapAttrs one delivered; } ];
+      {
+        # a declared quirk is always bound; without a pipe it is the host scope's own pool (reference/quirks.mdx:97-104)
+        modules = [ { _module.args = builtins.mapAttrs (k: _: local h.name k) (world.quirks or { }) // builtins.mapAttrs one delivered; } ];
+        targeted = builtins.mapAttrs (a: ps: builtins.mapAttrs one (builtins.groupBy (o: o.key) ps)) (builtins.groupBy (o: o.aspect) toPairs);
+      };
   };
 }

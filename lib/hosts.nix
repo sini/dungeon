@@ -25,11 +25,12 @@ dungeon: {
               hmClasses = u: if h0.users ? ${u} && us.${u}.classes != [ ] then us.${u}.classes else world.schema.user.classes or [ ];
               envUsers = cls: builtins.filter (u: builtins.elem cls (hmClasses u)) (builtins.attrNames us);
               allHosts = builtins.mapAttrs (n: e: { host = e; config = systems.${n}.config; }) flat;
+              ch = dungeon.channels.of world allHosts h (pol.siblingsOf h (builtins.attrNames flat));
             in
-            r.modules
-            ++ r.hm inputs (envUsers "homeManager")
+            r.modulesFor ch.targeted
+            ++ r.hm inputs (envUsers "homeManager") (pol.chainOf h0)
             ++ dungeon.homeEnv r inputs h envUsers
-            ++ dungeon.channels.modules world allHosts h (pol.siblingsOf h (builtins.attrNames flat));
+            ++ ch.modules;
         }
       ) built;
     in

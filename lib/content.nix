@@ -3,8 +3,8 @@ let
   denArgs = [ "host" "user" "home" ];
   # lowered inline includes (entry.nix) are setFunctionArgs functors, not lambdas
   isFn = v: builtins.isFunction v || (builtins.isAttrs v && v ? __functor && v ? __functionArgs);
-  # only den ctx args trigger binding; nixpkgs-style module fns pass through untouched
-  isDen = f: builtins.any (n: builtins.hasAttr n (dungeon.genLib.functionArgs f)) denArgs;
+  # only den ctx args (and quirk pools the caller binds) trigger binding; nixpkgs-style module fns pass through untouched
+  isDen = args: f: builtins.any (n: builtins.elem n denArgs || args ? ${n}) (builtins.attrNames (dungeon.genLib.functionArgs f));
   # collision policy (reference/aspects.mdx:178-207): entity level, most specific bound entity first; the kind level is
   # folded into each entity (eval.nix); global default "error". shortcut: aspect meta.collisionPolicy and
   # den.config.classModuleCollisionPolicy are not read, add when a fleet sets them.
@@ -22,23 +22,25 @@ let
     in
     { config.warnings = { _type = "if"; condition = if has then true else builtins.foldl' (acc: w: builtins.trace "evaluation warning: ${w}" acc) false ws; content = ws; }; };
   bind =
-    args: v:
+    ms: args: v:
     let
       p = policyOf args;
-      w = dungeon.gen.bind.wrap { bindings = args; defaultMergeStrategy = strategy.${if p == null then "error" else p}; } v;
+      w = dungeon.gen.bind.wrap { bindings = args; mergeStrategies = ms; defaultMergeStrategy = strategy.${if p == null then "error" else p}; } v;
       # full application (every arg a den arg) never reaches the module system: no collision (class-modules.mdx:166)
       partial = builtins.any (n: !(args ? ${n})) (builtins.attrNames (dungeon.genLib.functionArgs v));
     in
     if partial && w.validator != null then { imports = [ w.module (validatorModule w.validator) ]; } else w.module;
   walk =
-    args: v:
+    ms: args: v:
     if isFn v then
-      (if isDen v then bind args v else v)
+      (if isDen args v then bind ms args v else v)
     else if builtins.isAttrs v && v ? imports && builtins.isList v.imports then
-      v // { imports = map (walk args) v.imports; }
+      v // { imports = map (walk ms args) v.imports; }
     else
       v;
 in
 {
-  content.classModule = walk;
+  content.classModule = walk { };
+  # `keys` are bound over a module-system arg of the same name (bind-wins): pipe.to data shadows the unmodified pool
+  content.classModuleOver = keys: walk (builtins.listToAttrs (map (name: { inherit name; value = "bind-wins"; }) keys));
 }

@@ -116,7 +116,9 @@ dungeon: {
       argsOf = argsOf' mF;
       # OS class content: host class (schema.mdx:141: nixos or darwin) + `os` class (reference/batteries.mdx:53-57)
       os = host.class;
-      nixosOf = args: a: builtins.concatMap (k: if a.content ? ${k} then [ (dungeon.content.classModule args a.content.${k}) ] else [ ]) [ os "os" ];
+      nixosOf = nixosOver [ ];
+      # `keys` of args shadow same-named module-system args (pipe.to data, content.nix classModuleOver)
+      nixosOver = keys: args: a: builtins.concatMap (k: if a.content ? ${k} then [ (dungeon.content.classModuleOver keys args a.content.${k}) ] else [ ]) [ os "os" ];
       userCands =
         m: u:
         let
@@ -177,11 +179,12 @@ dungeon: {
         builtins.concatMap (nixosOf (quirkArgs u)) (builtins.concatMap (th [ ]) (userClosure u));
       # user-scope class modules read the user scope's own quirk pool, not the host's (reference/quirks.mdx:97-104); bound per module, so it never leaks to host-scope modules
       # shortcut: only keys the user closure emits are bound and a config-reading user thunk throws; upgrade with the user HM config ctx (channels.nix userCtx).
-      quirkArgs =
-        u:
+      quirkArgs = u: quirkArgsOf u (argsOf u) (userClosure u);
+      # quirk thunks are called with `ctx`; the bound args stay argsOf u + the pools of `cl`
+      quirkArgsOf =
+        u: ctx: cl:
         let
-          cl = userClosure u;
-          val = k: x: if !builtins.isFunction x then x else if builtins.all (n: (argsOf u) ? ${n}) (builtins.attrNames (dungeon.genLib.filterAttrs (_: o: !o) (builtins.functionArgs x))) then x (builtins.intersectAttrs (builtins.functionArgs x) (argsOf u)) else throw "den: quirk `${k}` thunk at user `${u}` reads args beyond the user scope ctx (config): not built yet";
+          val = k: x: if !builtins.isFunction x then x else if builtins.all (n: ctx ? ${n}) (builtins.attrNames (dungeon.genLib.filterAttrs (_: o: !o) (builtins.functionArgs x))) then x (builtins.intersectAttrs (builtins.functionArgs x) ctx) else throw "den: quirk `${k}` thunk at user `${u}` reads args beyond the user scope ctx (config): not built yet";
           pool = k: builtins.concatMap (a: if a.quirks ? ${k} then (let r = val k a.quirks.${k}; in if builtins.isList r then r else [ r ]) else [ ]) cl;
         in
         argsOf u // builtins.listToAttrs (map (k: { name = k; value = pool k; }) (builtins.concatMap (a: builtins.attrNames a.quirks) cl));
@@ -197,14 +200,24 @@ dungeon: {
         ++ builtins.concatMap (
           a: (if hasUser u a then [ (userPart u a) ] else [ ]) ++ (if builtins.elem a.name (map (b: b.name) tuCl) || hostIds ? ${a.id_hash or ""} then [ ] else nixosOf (argsOf u) a)
         ) (userClosure u);
+      # `targeted` (channels.nix of): aspect name -> pipe.to quirk data, bound into that aspect's host-scope OS modules.
+      # shortcut: user-scope (forUser) OS modules of a targeted aspect see the unmodified pool; upgrade when a fleet targets one.
+      modulesFor = targeted: let hostScopeCl = builtins.filter (a: !needsUser a) (defaultCl ++ hostCl); hostRoutes = dungeon.routesOf (dungeon.effectsOf "route" (dungeon.firePols (hostArgs mF) (schemaPols "host" ++ dungeon.uniqPols (builtins.concatMap (a: a.policyIncs) hostScopeCl)))) hostScopeCl;
+          hostOf' = a: let t = targeted.${a.name} or { }; in nixosOver (builtins.attrNames t) ({ inherit host; } // t) a;
+        in builtins.concatMap hostOf' (hostScopeCl ++ hostRoutes) ++ builtins.concatMap forUser users
+        # policy.provide effects of the host scope and its custom child scopes (scopes.nix, gen-scope nta)
+        ++ dungeon.scopes.delivered sch host (hostArgs mF) (schemaPols "host" ++ memPols mF host.name);
     in
     {
-      inherit userModules argsOf userClosure defaultCl;
+      inherit userModules argsOf userClosure defaultCl modulesFor;
       # home-manager.users.<u> gets default's then the user closure's homeManager parts; HM nixos module once, only if some user opts in.
       hm =
-        inputs: hmUsers:
+        inputs: hmUsers: chain:
         let
-          hmOf = u: a: if a.content ? homeManager then [ (dungeon.content.classModule (argsOf u) a.content.homeManager) ] else [ ];
+          # host-aspects re-resolves the host tree at the user scope: its quirk emissions join the user pool, thunks called with the
+          # host scope's resolution-chain ctx (`chain`, e.g. a parent `environment`) besides { host, user } (reference/quirks.mdx:97-104)
+          hmArgs = u: quirkArgsOf u (chain // argsOf u) (userClosure u ++ viaHost u);
+          hmOf = u: a: if a.content ? homeManager then [ (dungeon.content.classModule (hmArgs u) a.content.homeManager) ] else [ ];
           # host-aspects opt-in: host closure parts not already in the user's closure
           viaHost = u: let uc = userClosure u; seen = map (b: b.name) (defaultCl ++ uc); in
             if builtins.elem "host-aspects" (map (b: b.name) uc) then builtins.filter (a: !(builtins.elem a.name seen)) hostBase else [ ];
@@ -218,9 +231,7 @@ dungeon: {
           ++ map (u: { home-manager.users.${u}.imports = builtins.concatMap (hmOf u) (defaultCl ++ hmHostCl ++ userClosure u ++ viaHost u ++ routes (argsOf u) (viaHost u)); }) hmUsers;
       # host scope fires routes too (schema.host + aspect policies of the host closure), over the host scope content
       # shortcut: a den.default route also fires per user scope; default fromClass content then lands twice, dedup with minted identity (D4).
-      modules = let hostScopeCl = builtins.filter (a: !needsUser a) (defaultCl ++ hostCl); hostRoutes = dungeon.routesOf (dungeon.effectsOf "route" (dungeon.firePols (hostArgs mF) (schemaPols "host" ++ dungeon.uniqPols (builtins.concatMap (a: a.policyIncs) hostScopeCl)))) hostScopeCl; in builtins.concatMap (nixosOf { inherit host; }) (hostScopeCl ++ hostRoutes) ++ builtins.concatMap forUser users
-        # policy.provide effects of the host scope and its custom child scopes (scopes.nix, gen-scope nta)
-        ++ dungeon.scopes.delivered sch host (hostArgs mF) (schemaPols "host" ++ memPols mF host.name);
+      modules = modulesFor { };
       # policy.instantiate custom spec (reference/policies.mdx:162-172): class bucket of the host scope subtree (host, then users)
       classModules =
         cls:

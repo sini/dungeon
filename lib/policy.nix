@@ -77,6 +77,8 @@ dungeon: {
       customInsts = builtins.concatMap (s: s.customInsts) all;
       # declared host.users first, then resolved user children of every scope of that host
       usersOf = h: h.users // builtins.listToAttrs (builtins.concatMap (hs: map (u: { name = u.ctx.user.name; value = u.ctx.user; }) (builtins.filter (s: s.kind == "user") (scopes hs))) (hostScopes h));
+      # resolution-chain ctx of h's host scope besides `host` (e.g. a parent `environment`); {} when no policy scope resolves h
+      chainOf = h: let s = hostScopes h; in if s == [ ] then { } else removeAttrs (builtins.head s).ctx [ "host" ];
       # same parent scope; no scope for h (no fleet) means all hosts
       siblingsOf = h: allNames:
         let p = builtins.filter (s: builtins.any (c: c.kind == "host" && c.ctx.host.name == h.name) s.children) all;
